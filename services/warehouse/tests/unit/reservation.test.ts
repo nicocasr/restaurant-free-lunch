@@ -1,13 +1,5 @@
-import { INGREDIENTS, type Ingredient } from '@alegra-lunch/contracts';
-
 import { reserve } from '../../src/domain/reservation';
-import type { Stock } from '../../src/domain/stock';
-
-function stockOf(quantities: Partial<Record<Ingredient, number>>): Stock {
-  return Object.fromEntries(
-    INGREDIENTS.map((ingredient) => [ingredient, quantities[ingredient] ?? 0]),
-  ) as Stock;
-}
+import { stockOf } from '../support/stock';
 
 describe('reserve', () => {
   it('deducts every ingredient of the recipe when there is enough stock', () => {

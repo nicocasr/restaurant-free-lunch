@@ -1,13 +1,7 @@
-import { INGREDIENTS, type Ingredient, type IngredientQuantity } from '@alegra-lunch/contracts';
+import type { IngredientQuantity } from '@alegra-lunch/contracts';
 
-import type { Stock } from '../../src/domain/stock';
 import { serveWaitingList, type WaitingOrder } from '../../src/domain/waiting-list';
-
-function stockOf(quantities: Partial<Record<Ingredient, number>>): Stock {
-  return Object.fromEntries(
-    INGREDIENTS.map((ingredient) => [ingredient, quantities[ingredient] ?? 0]),
-  ) as Stock;
-}
+import { stockOf } from '../support/stock';
 
 const ajiaco: IngredientQuantity[] = [
   { ingredient: 'chicken', quantity: 2 },
