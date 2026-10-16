@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
+# Environment variables (never commit secrets)
+.env
+.env.*
+!.env.example
+
+# Serverless Framework
+.serverless/
+.esbuild/
+
+# LocalStack data
+.localstack/
+volume/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
