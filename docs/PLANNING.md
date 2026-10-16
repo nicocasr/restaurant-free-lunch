@@ -3,7 +3,12 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.0 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.1 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+
+| Versión | Fecha | Cambio |
+|---------|-------|--------|
+| 1.0 | 16/10/2026 | Planificación inicial aprobada |
+| 1.1 | 16/10/2026 | §3.7: origen y justificación de las jornadas (no forman parte del enunciado). §9: se retira el riesgo del free tier de AWS |
 
 ---
 
@@ -339,6 +344,42 @@ En el peor caso se compra **de más**, nunca de menos. Ese excedente queda en la
 
 ### 3.7 Jornadas
 
+> ⚠️ **Este concepto no está en el enunciado del reto.** Es una decisión de diseño propia. Aquí se explica de dónde viene y por qué se incluye.
+
+#### Origen: dos requisitos en tensión
+
+| Requisito | Texto del reto |
+|-----------|----------------|
+| R4 | "La bodega **inicia siempre** con 5 unidades de cada ingrediente" |
+| Persistencia | "El estado del sistema debe **sobrevivir reinicios**" |
+
+Ejemplo: un usuario pide 50 platos y la bodega queda con 2 cebollas y 0 papas. Luego otro usuario abre la misma aplicación:
+
+- **Reiniciar la bodega a 5 cuando arranca el servidor** viola la persistencia: el estado no sobrevive al reinicio.
+- **No reiniciarla nunca** viola R4: el "inicia siempre con 5" solo se cumple la primera vez, y ningún usuario posterior puede comprobarlo.
+
+**Interpretación adoptada:** "siempre" se refiere a **cada jornada de donación**, no a cada arranque del proceso.
+El reinicio de la bodega pasa a ser una **acción explícita de negocio** ("Nueva jornada") y no un efecto secundario técnico.
+
+#### Mínimo necesario vs. lo que se agrega
+
+| Nivel | Qué incluye | ¿Lo exige el reto? |
+|-------|-------------|-------------------|
+| Mínimo | Una acción que devuelve la bodega a 5 sin romper la persistencia | Sí, implícitamente (por la tensión R4 ↔ persistencia) |
+| **Adoptado** | Jornada como concepto de dominio: `workdayId` en pedidos y compras, historial por jornada, bloqueo si hay pedidos en curso | No: es un valor agregado |
+
+**Por qué se adopta el nivel completo y no el mínimo:**
+- **Consistencia:** reiniciar la bodega con pedidos a medio reservar descuadraría el inventario. Por eso solo se permite sin pedidos en curso.
+- **Historial útil:** el reto pide mostrar el historial de pedidos y de compras. Agruparlo por jornada evita mezclar eventos distintos sin perder información.
+- **Valor para la IA:** el asistente puede comparar jornadas ("¿en qué jornada se compró más cebolla?").
+- **Pruebas de usuario:** cada reviewer puede iniciar una jornada limpia y ver el sistema desde el estado inicial descrito en el reto.
+
+**Costo asumido:** un evento más (`WorkdayStarted`), un campo más en los registros y más tests. Se considera razonable frente al beneficio.
+
+**Alternativa descartada:** un botón "Reiniciar bodega" sin concepto de jornada. Es más simple, pero mezcla el historial y no aporta valor de análisis.
+
+#### Definición
+
 Una **jornada** (`workday`) es un evento de donación, de principio a fin. Todo pedido y toda compra pertenecen a una jornada (`workdayId`).
 
 **Flujo de "Nueva jornada":**
@@ -462,7 +503,6 @@ alegra-lunch/
 
 | Riesgo | Plan |
 |--------|------|
-| El free tier de AWS cambió en 2025 para cuentas nuevas | Verificar el tipo de cuenta antes de desplegar y configurar **AWS Budgets** con alerta en $1 |
 | Límites del free tier de Gemini | Manejo de errores 429 y mensaje claro en el chat |
 | LocalStack no emula algo (p. ej. WebSocket API) | El servicio realtime tendrá en local un adaptador WebSocket con `ws` sobre `node:http` |
 | La plaza de mercado se cae o es lenta | Timeouts y reintentos indefinidos con tope de 10 s; los pedidos quedan en espera, no fallan |
