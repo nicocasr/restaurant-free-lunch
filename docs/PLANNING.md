@@ -3,13 +3,14 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.2 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.3 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
 | 1.0 | 16/10/2026 | Planificación inicial aprobada |
 | 1.1 | 16/10/2026 | §3.7: origen y justificación de las jornadas (no forman parte del enunciado). §9: se retira el riesgo del free tier de AWS |
 | 1.2 | 16/10/2026 | §3.2 y §3.5: nuevo evento `OrderWaitingIngredients`. `StockShortage` es por ingrediente (demanda agregada), así que no sirve para marcar qué pedido espera ni qué le falta |
+| 1.3 | 16/10/2026 | §3.8: justificación de la validación en tiempo de ejecución con zod |
 
 ---
 
@@ -73,7 +74,7 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 | Idioma | **Inglés** en código, documentación, commits e interfaz del dashboard | Estándar en equipos. Este documento se traduce como **último paso** del proyecto |
 | Calidad | ESLint + Prettier | Estilo consistente y verificado en CI |
 | Commits | Conventional Commits; `test:` (rojo) y `feat:` (verde) por separado | El ciclo TDD queda visible en el historial de Git |
-| Validación | zod (librería, no framework) | Valida en tiempo de ejecución los eventos, los requests HTTP y las variables de entorno |
+| Validación | zod (librería, no framework) | Valida en tiempo de ejecución los eventos, los requests HTTP y las variables de entorno (ver §3.8) |
 | Inicio de jornada | **Jornadas separadas**: el botón "Nueva jornada" solo se habilita sin pedidos en curso; reinicia la bodega a 5 unidades de cada ingrediente y el historial se conserva agrupado por jornada (ver §3.7) | La persistencia sobrevive reinicios del servidor; el "inicia con 5" aplica a la jornada, no al proceso. El historial por jornada permite comparar jornadas (útil para el asistente IA) |
 | Envío al dashboard | realtime **agrupa** los cambios y envía un paquete cada ~500 ms | Para el ojo humano sigue siendo tiempo real; evita saturar el navegador y la cuota de mensajes de API Gateway |
 | Tamaño del pedido | Límite máximo **configurable** (variable de entorno) y validado con zod | Protege el sistema de pedidos absurdos |
@@ -400,6 +401,47 @@ Una **jornada** (`workday`) es un evento de donación, de principio a fin. Todo 
 - sin pedidos en curso → crea la jornada y la bodega vuelve a 5;
 - dos solicitudes simultáneas → una sola jornada nueva;
 - `WorkdayStarted` repetido → no altera el inventario dos veces.
+
+### 3.8 Validación en tiempo de ejecución (zod)
+
+> El reto **no exige** zod. Es una decisión propia; aquí se explica por qué se usa.
+
+#### El problema: los tipos de TypeScript no existen en ejecución
+
+TypeScript verifica los tipos **al compilar**. Al generar JavaScript, todo `interface` o `type` se borra.
+Por eso, un dato que llega de afuera (un mensaje SQS, un body HTTP, la respuesta de la plaza) no se verifica:
+el código lo trata como si fuera del tipo declarado, aunque no lo sea.
+
+Ejemplo: llega `IngredientPurchased` con `{ ingredient: "garlic", quantity: -3 }`. TypeScript no lo detiene
+y la bodega podría restar unidades de un ingrediente que no existe.
+
+#### Qué hace zod
+
+Con un solo **esquema** se obtienen dos cosas:
+
+1. **Validación en ejecución:** `safeParse(dato)` rechaza lo inválido e indica qué campo falla.
+2. **Tipo de TypeScript:** `z.infer<typeof Schema>` deriva el tipo del mismo esquema, así que el tipo y la validación **nunca se desalinean**.
+
+#### Dónde se usa: en cada frontera por donde entran datos que no controlamos
+
+| Frontera | Qué protege |
+|----------|-------------|
+| Eventos SNS/SQS (`parseEvent` en `packages/contracts`) | Un mensaje mal formado va a la DLQ (§3.3) y no corrompe el estado |
+| Requests HTTP (`POST /orders`, `POST /workdays`) | Responde `400` ante `quantity: 0`, negativos o texto |
+| Variables de entorno | El servicio falla al arrancar, con un mensaje claro, si falta configuración |
+| Respuesta de la plaza | Verifica que `quantitySold` sea realmente un entero ≥ 0 |
+| Argumentos de las herramientas de Gemini | El modelo no puede pasar parámetros inventados (§5) |
+
+Los **productores** también validan (`createEvent`): un servicio nunca publica un evento que rompa el contrato.
+
+#### Por qué zod y no otra opción
+
+| Opción | Motivo para descartarla |
+|--------|------------------------|
+| Validación manual (`if typeof …`) | Más código y más errores, y el tipo se declara aparte (duplicado) |
+| JSON Schema + `ajv` | Más verboso y no genera los tipos de TypeScript |
+
+**Cumple la restricción del reto:** zod es una librería de validación, no un framework. No impone estructura ni controla el flujo de la aplicación.
 
 ---
 
