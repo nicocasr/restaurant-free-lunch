@@ -1,0 +1,15 @@
+{
+  "name": "@alegra-lunch/warehouse",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Inventory and atomic ingredient reservation, with the flexible FIFO waiting list",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@alegra-lunch/contracts": "0.1.0"
+  }
+}
