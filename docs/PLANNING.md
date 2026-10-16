@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.3 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.4 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -11,6 +11,7 @@ Estado: **v1.3 — Aprobado (16/10/2026)**. Los cambios posteriores se registran
 | 1.1 | 16/10/2026 | §3.7: origen y justificación de las jornadas (no forman parte del enunciado). §9: se retira el riesgo del free tier de AWS |
 | 1.2 | 16/10/2026 | §3.2 y §3.5: nuevo evento `OrderWaitingIngredients`. `StockShortage` es por ingrediente (demanda agregada), así que no sirve para marcar qué pedido espera ni qué le falta |
 | 1.3 | 16/10/2026 | §3.8: justificación de la validación en tiempo de ejecución con zod |
+| 1.4 | 16/10/2026 | §3.6: ante un duplicado, el handler **republica** el evento resultante; así no se pierde si el proceso murió entre la escritura y la publicación |
 
 ---
 
@@ -317,7 +318,11 @@ Además, dos copias pueden procesarse **al mismo tiempo** en instancias distinta
 
 **Regla general:** el efecto de negocio y la marca de "ya procesado" se escriben en la **misma transacción**.
 Si se escribieran por separado, un fallo entre ambas escrituras dejaría el efecto aplicado sin la marca, o la marca sin el efecto.
-Cuando la condición falla por duplicado, el handler lo trata como **éxito** (el trabajo ya estaba hecho): confirma el mensaje y no lo reintenta.
+Cuando la condición falla por duplicado, el handler lo trata como **éxito** (el trabajo ya estaba hecho): no repite el efecto, **vuelve a publicar el evento resultante** y confirma el mensaje.
+
+**Por qué republicar:** la escritura en la BD y la publicación en SNS no pueden ser atómicas entre sí. Si el proceso guarda el efecto y muere antes de publicar, SQS reintenta el mensaje y la BD responde "ya procesado". Si el handler no publicara nada, el evento se perdería y el pedido quedaría atascado para siempre. Republicar puede emitir el evento dos veces, pero es seguro porque todos los consumidores son idempotentes.
+
+**Alternativa descartada:** *transactional outbox* con DynamoDB Streams (el evento se guarda en la misma transacción y otro proceso lo publica). Es más robusto, pero agrega un stream y una Lambda por servicio y es más difícil de emular en LocalStack.
 
 **Aplicación por servicio:**
 
