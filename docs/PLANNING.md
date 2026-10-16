@@ -3,12 +3,13 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.1 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.2 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
 | 1.0 | 16/10/2026 | Planificación inicial aprobada |
 | 1.1 | 16/10/2026 | §3.7: origen y justificación de las jornadas (no forman parte del enunciado). §9: se retira el riesgo del free tier de AWS |
+| 1.2 | 16/10/2026 | §3.2 y §3.5: nuevo evento `OrderWaitingIngredients`. `StockShortage` es por ingrediente (demanda agregada), así que no sirve para marcar qué pedido espera ni qué le falta |
 
 ---
 
@@ -160,6 +161,7 @@ sequenceDiagram
         B-)K: IngredientsReserved
     else Falta stock
         B->>B: Pedido a la lista de espera
+        B-)O: OrderWaitingIngredients (pedido, faltantes)
         B->>B: Calcula demanda agregada del ingrediente
         B-)M: StockShortage (ingrediente, cantidad por comprar)
         loop Hasta completar el faltante
@@ -185,7 +187,7 @@ sequenceDiagram
 |--------|--------|
 | `PLACED` | `OrderPlaced` |
 | `COOKING_REQUESTED` | `IngredientsRequested` |
-| `WAITING_INGREDIENTS` | `StockShortage` |
+| `WAITING_INGREDIENTS` | `OrderWaitingIngredients` (por pedido; `StockShortage` es por ingrediente y solo lo consume market) |
 | `PREPARING` | `IngredientsReserved` |
 | `DELIVERED` | `OrderDelivered` |
 
@@ -240,7 +242,7 @@ que dos pedidos consuman la misma unidad (*race condition*).
 
 - ✅ **Éxito:** se descuentan **todos** los ingredientes y se emite `IngredientsReserved`. La cocina prepara y entrega.
 - ❌ **Falla:** no se descuenta **nada** (todo o nada). Con los `CancellationReasons` se identifican los ingredientes faltantes. Entonces:
-  - el pedido entra a la **lista de espera** (ordenada por fecha de llegada; se atiende con FIFO flexible, ver paso 3);
+  - el pedido entra a la **lista de espera** (ordenada por fecha de llegada; se atiende con FIFO flexible, ver paso 3) y se emite `OrderWaitingIngredients(orderId, faltantes)` para orders y el dashboard;
   - en la misma transacción se suma lo que necesita el pedido al contador de **demanda** de cada ingrediente faltante;
   - se evalúa la **demanda agregada** (abajo) y, si hace falta, se emite `StockShortage(shortageId, ingrediente, cantidad)`.
 
