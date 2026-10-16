@@ -1,0 +1,6 @@
+# Store and check out text files with LF so they behave the same on Windows, Docker and Lambda
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary

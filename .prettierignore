@@ -1,0 +1,6 @@
+dist/
+coverage/
+.serverless/
+package-lock.json
+# Hand-written documentation keeps its own formatting
+docs/
