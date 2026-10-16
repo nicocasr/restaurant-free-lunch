@@ -1,7 +1,6 @@
-import type { Ingredient, IngredientQuantity } from '@alegra-lunch/contracts';
+import type { IngredientQuantity } from '@alegra-lunch/contracts';
 
-/** Units available per ingredient. */
-export type Stock = Readonly<Record<Ingredient, number>>;
+import type { Stock } from './stock';
 
 export type ReservationResult =
   { reserved: true; stock: Stock } | { reserved: false; missing: IngredientQuantity[] };
