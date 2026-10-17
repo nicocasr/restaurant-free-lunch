@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.4 — Aprobado (16/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.5 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -12,6 +12,7 @@ Estado: **v1.4 — Aprobado (16/10/2026)**. Los cambios posteriores se registran
 | 1.2 | 16/10/2026 | §3.2 y §3.5: nuevo evento `OrderWaitingIngredients`. `StockShortage` es por ingrediente (demanda agregada), así que no sirve para marcar qué pedido espera ni qué le falta |
 | 1.3 | 16/10/2026 | §3.8: justificación de la validación en tiempo de ejecución con zod |
 | 1.4 | 16/10/2026 | §3.6: ante un duplicado, el handler **republica** el evento resultante; así no se pierde si el proceso murió entre la escritura y la publicación |
+| 1.5 | 17/10/2026 | §3.5: el pedido en espera suma a `waitingNeed` **todos** sus ingredientes, no solo los faltantes; así no queda atascado si el stock que sí había se gasta mientras espera |
 
 ---
 
@@ -245,8 +246,11 @@ que dos pedidos consuman la misma unidad (*race condition*).
 - ✅ **Éxito:** se descuentan **todos** los ingredientes y se emite `IngredientsReserved`. La cocina prepara y entrega.
 - ❌ **Falla:** no se descuenta **nada** (todo o nada). Con los `CancellationReasons` se identifican los ingredientes faltantes. Entonces:
   - el pedido entra a la **lista de espera** (ordenada por fecha de llegada; se atiende con FIFO flexible, ver paso 3) y se emite `OrderWaitingIngredients(orderId, faltantes)` para orders y el dashboard;
-  - en la misma transacción se suma lo que necesita el pedido al contador de **demanda** de cada ingrediente faltante;
+  - en la misma transacción se suma lo que necesita el pedido al contador de **demanda** de **cada uno de sus ingredientes**, no solo de los faltantes;
   - se evalúa la **demanda agregada** (abajo) y, si hace falta, se emite `StockShortage(shortageId, ingrediente, cantidad)`.
+
+> **Por qué todos los ingredientes y no solo los faltantes:** un Ajiaco espera cebolla, pero sí había papa. Mientras espera, otros pedidos gastan la papa. Cuando llega la cebolla, ahora le falta papa. Si `waitingNeed[potato]` no incluyera al Ajiaco, nadie compraría papa y el pedido quedaría atascado para siempre.
+> Contar todos los ingredientes no genera compras de más: para los que hay stock, la fórmula da `≤ 0` y no se compra nada, hasta que ese stock se gaste.
 
 **Demanda agregada por ingrediente.** El ítem `demand/<ingrediente>` lleva dos contadores:
 
