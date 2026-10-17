@@ -1,4 +1,11 @@
-import type { WarehouseRepository, WriteOutcome } from '../../src/application/ports';
+import type { IngredientQuantity } from '@alegra-lunch/contracts';
+
+import type {
+  ReserveOutcome,
+  WarehouseRepository,
+  WriteOutcome,
+} from '../../src/application/ports';
+import { reserve } from '../../src/domain/reservation';
 import type { Stock } from '../../src/domain/stock';
 import { stockOf } from './stock';
 
@@ -17,5 +24,14 @@ export class InMemoryWarehouse implements WarehouseRepository {
     this.startedWorkdays.add(workdayId);
     this.stock = { ...stock };
     return Promise.resolve('applied');
+  }
+
+  reserve(_orderId: string, needs: readonly IngredientQuantity[]): Promise<ReserveOutcome> {
+    const result = reserve(this.stock, needs);
+    if (!result.reserved) {
+      return Promise.resolve({ status: 'insufficient', missing: result.missing });
+    }
+    this.stock = result.stock;
+    return Promise.resolve({ status: 'reserved' });
   }
 }
