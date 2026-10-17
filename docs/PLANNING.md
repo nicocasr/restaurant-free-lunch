@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.6 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.7 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -14,6 +14,7 @@ Estado: **v1.6 — Aprobado (17/10/2026)**. Los cambios posteriores se registran
 | 1.4 | 16/10/2026 | §3.6: ante un duplicado, el handler **republica** el evento resultante; así no se pierde si el proceso murió entre la escritura y la publicación |
 | 1.5 | 17/10/2026 | §3.5: el pedido en espera suma a `waitingNeed` **todos** sus ingredientes, no solo los faltantes; así no queda atascado si el stock que sí había se gasta mientras espera |
 | 1.6 | 17/10/2026 | §3.5: **un faltante activo por ingrediente** (no se emite otro mientras `inFlight > 0`), para no comprar de más. §3.5 y §3.6: el faltante se guarda como **pendiente** junto con `inFlight` y se republica hasta publicarse |
+| 1.7 | 17/10/2026 | §3.5 y §3.6: la reserva de un pedido que sale de la espera se guarda como **pendiente de publicar** y se republica hasta publicarse; así un plato no queda atascado si el proceso muere antes de avisar a la cocina |
 
 ---
 
@@ -296,6 +297,10 @@ que nadie va a comprar y la fórmula no volvería a emitir nada: los pedidos esp
 - Recorre la lista de espera **del más antiguo al más nuevo** y reintenta el paso 1 para cada pedido, con la política **FIFO flexible**:
   - si el pedido más antiguo no alcanza, **no bloquea** a los demás: se salta y se intenta el siguiente;
   - ejemplo: hay 2 papas, el #1 (Ajiaco) necesita 3 y el #2 (Caldo) necesita 2 → sale el #2 ya, y el #1 espera la próxima compra.
+- **Reserva pendiente de publicar:** la reserva de cada pedido que sale de la espera se guarda, en la misma transacción, con la marca **no publicada**.
+  Tras publicar `IngredientsReserved` se marca como publicada, y cada compra recibida republica las que sigan pendientes.
+  Sin esto, si el proceso muere entre reservar y publicar, el reintento de la compra ya no encuentra el pedido en la espera:
+  sus ingredientes quedarían descontados y la cocina nunca se enteraría.
 
 **Por qué FIFO flexible y no estricto:**
 - El objetivo del evento es entregar el **mayor número de platos en el menor tiempo**.
@@ -354,6 +359,7 @@ Cuando la condición falla por duplicado, el handler lo trata como **éxito** (e
 | kitchen | Asignar receta aleatoria | `orderId` | `assignments/<orderId>` con `attribute_not_exists`. **Crítico:** si se reprocesa, se reutiliza la receta ya guardada; no se vuelve a sortear otra |
 | warehouse | Reservar ingredientes | `orderId` | `reservations/<orderId>` en la misma transacción del descuento (§3.5) |
 | warehouse | Sumar compra al stock | `purchaseId` | `processed/<purchaseId>` en la misma transacción del `ADD` |
+| warehouse | Sacar un pedido de la espera | `orderId` | Reserva con marca **pendiente de publicar**, en la misma transacción que borra `waiting/<orderId>`; se republica hasta marcarse como publicada (§3.5) |
 | warehouse | Emitir faltante | `shortageId` | `shortages/<shortageId>` pendiente, en la misma escritura condicional que fija `inFlight`; se republica hasta marcarse como publicado (§3.5) |
 | market | Comprar en la plaza | `shortageId` | Ver limitación abajo |
 | realtime | Difundir al dashboard | `eventId` | No escribe estado de negocio; el frontend descarta eventos con `eventId` ya recibido |
