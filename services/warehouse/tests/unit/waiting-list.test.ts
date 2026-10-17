@@ -1,23 +1,8 @@
 import type { IngredientQuantity } from '@alegra-lunch/contracts';
 
 import { serveWaitingList, type WaitingOrder } from '../../src/domain/waiting-list';
+import { ajiaco, caldo, changua } from '../support/recipes';
 import { stockOf } from '../support/stock';
-
-const ajiaco: IngredientQuantity[] = [
-  { ingredient: 'chicken', quantity: 2 },
-  { ingredient: 'potato', quantity: 3 },
-  { ingredient: 'onion', quantity: 1 },
-  { ingredient: 'rice', quantity: 1 },
-];
-const caldo: IngredientQuantity[] = [
-  { ingredient: 'meat', quantity: 2 },
-  { ingredient: 'potato', quantity: 2 },
-  { ingredient: 'onion', quantity: 1 },
-];
-const changua: IngredientQuantity[] = [
-  { ingredient: 'cheese', quantity: 2 },
-  { ingredient: 'onion', quantity: 1 },
-];
 
 function waiting(orderId: string, minute: number, needs: IngredientQuantity[]): WaitingOrder {
   return {

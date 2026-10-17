@@ -5,18 +5,8 @@ import { createEvent, type IngredientQuantity } from '@alegra-lunch/contracts';
 import { requestIngredients } from '../../src/application/request-ingredients';
 import { InMemoryPublisher } from '../support/in-memory-publisher';
 import { InMemoryWarehouse } from '../support/in-memory-warehouse';
+import { ajiaco, changua } from '../support/recipes';
 import { stockOf } from '../support/stock';
-
-const changua: IngredientQuantity[] = [
-  { ingredient: 'cheese', quantity: 2 },
-  { ingredient: 'onion', quantity: 1 },
-];
-const ajiaco: IngredientQuantity[] = [
-  { ingredient: 'chicken', quantity: 2 },
-  { ingredient: 'potato', quantity: 3 },
-  { ingredient: 'onion', quantity: 1 },
-  { ingredient: 'rice', quantity: 1 },
-];
 
 function ingredientsRequested(ingredients: IngredientQuantity[]) {
   return createEvent(
