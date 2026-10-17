@@ -12,7 +12,9 @@ export function requestIngredients(deps: {
     const context = { correlationId: event.correlationId };
 
     const outcome = await deps.warehouse.reserve(orderId, ingredients);
-    if (outcome.status === 'reserved') {
+    // On a duplicate the event is published again: the first attempt may have died
+    // between the write and the publish (§3.6).
+    if (outcome.status === 'reserved' || outcome.status === 'duplicate') {
       await deps.publisher.publish(
         createEvent('IngredientsReserved', { orderId, workdayId }, context),
       );
