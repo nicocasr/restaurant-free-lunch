@@ -37,6 +37,9 @@ export type Purchase = Pick<
   'purchaseId' | 'ingredient' | 'quantity'
 >;
 
+/** A reservation made from the waiting list that the kitchen has not been told about yet. */
+export type PendingReservation = EventPayload<'IngredientsReserved'>;
+
 /** A purchase request to the market, kept as pending until it is published (§3.5). */
 export type Shortage = EventPayload<'StockShortage'>;
 
@@ -58,10 +61,19 @@ export interface WarehouseRepository {
   enqueue(order: WaitingOrder): Promise<WriteOutcome>;
 
   /**
-   * Reserves a waiting order and, in the same transaction, takes it out of the waiting list
-   * and subtracts its need from the demand. Only one process can take out the same order.
+   * Reserves a waiting order and, in the same transaction, takes it out of the waiting list,
+   * subtracts its need from the demand and records the reservation as pending to publish.
+   * Only one process can take out the same order.
    */
   reserveFromWaiting(order: WaitingOrder): Promise<ReserveFromWaitingOutcome>;
+
+  waitingOrders(): Promise<WaitingOrder[]>;
+
+  pendingReservations(): Promise<PendingReservation[]>;
+
+  markReservationPublished(orderId: string): Promise<void>;
+
+  readStock(): Promise<Stock>;
 
   /**
    * Adds the units to the stock and subtracts them from the in-flight purchase, without going

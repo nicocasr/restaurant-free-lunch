@@ -1,6 +1,7 @@
 import { createEvent, type EventEnvelope } from '@alegra-lunch/contracts';
 
 import type { EventPublisher, WarehouseRepository } from './ports';
+import { publishPendingReservations } from './publish-reservations';
 import { requestPurchaseIfNeeded } from './request-purchase';
 
 /** Handles IngredientsRequested: reserves every ingredient of the recipe at once (§3.5). */
@@ -29,9 +30,9 @@ export function requestIngredients(deps: {
 
     // Lost wakeup: stock may have arrived after the failed reservation but before the order
     // joined the list, so nobody would retry it. 'not-waiting' means another process already
-    // reserved it; publishing again is safe and covers that process dying before publishing.
+    // reserved it; either way its reservation is published if it is still pending.
     if ((await deps.warehouse.reserveFromWaiting(order)) !== 'insufficient') {
-      await publishReserved();
+      await publishPendingReservations(deps, context);
       return;
     }
 
