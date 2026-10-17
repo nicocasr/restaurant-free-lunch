@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.8 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.9 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -16,6 +16,7 @@ Estado: **v1.8 — Aprobado (17/10/2026)**. Los cambios posteriores se registran
 | 1.6 | 17/10/2026 | §3.5: **un faltante activo por ingrediente** (no se emite otro mientras `inFlight > 0`), para no comprar de más. §3.5 y §3.6: el faltante se guarda como **pendiente** junto con `inFlight` y se republica hasta publicarse |
 | 1.7 | 17/10/2026 | §3.5 y §3.6: la reserva de un pedido que sale de la espera se guarda como **pendiente de publicar** y se republica hasta publicarse; así un plato no queda atascado si el proceso muere antes de avisar a la cocina |
 | 1.8 | 17/10/2026 | §3.7: la nueva jornada reinicia los contadores de demanda, y warehouse ignora las compras atrasadas de jornadas anteriores |
+| 1.9 | 17/10/2026 | §3.1: el catálogo de recetas de kitchen vive en el código, no en su tabla |
 
 ---
 
@@ -99,7 +100,7 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 | Servicio | Responsabilidad | Persistencia |
 |----------|-----------------|--------------|
 | **orders** | API del gerente: crea lotes de pedidos, historial y estado de cada pedido (read model) | Tabla `orders` (pedidos y lotes `batches/<key>`) |
-| **kitchen** | Elige la receta al azar, solicita ingredientes, prepara y entrega | Tabla `kitchen` (catálogo de recetas y `assignments/<orderId>`) |
+| **kitchen** | Elige la receta al azar, solicita ingredientes, prepara y entrega | Tabla `kitchen` (`assignments/<orderId>`). El catálogo de recetas vive en el código (`MENU`): es fijo, queda versionado en Git y se prueba sin base de datos |
 | **warehouse** | Inventario y reserva **atómica** de ingredientes; lista de espera FIFO flexible | Tabla `warehouse` (`inventory`, `reservations`, `waiting`, `processed`) |
 | **market** | Compra en la plaza con reintentos y *backoff*; historial de compras | Tabla `purchases` |
 | **realtime** | Conexiones WebSocket; agrupa los eventos y envía un paquete de cambios al dashboard cada ~500 ms | Tabla `connections` |
