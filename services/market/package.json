@@ -1,0 +1,15 @@
+{
+  "name": "@alegra-lunch/market",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Buys missing ingredients at the farmers market, retrying with exponential backoff",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@alegra-lunch/contracts": "0.1.0"
+  }
+}
