@@ -19,4 +19,8 @@ export class InMemoryKitchen implements KitchenRepository {
     this.assignments.set(assignment.orderId, assignment);
     return Promise.resolve(assignment);
   }
+
+  findAssignment(orderId: string): Promise<Assignment | undefined> {
+    return Promise.resolve(this.assignments.get(orderId));
+  }
 }

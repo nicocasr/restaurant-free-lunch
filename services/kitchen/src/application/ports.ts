@@ -14,6 +14,8 @@ export interface KitchenRepository {
    * a repeated message gets the recipe of the first attempt (PLANNING §3.6).
    */
   assignOnce(assignment: Assignment): Promise<Assignment>;
+
+  findAssignment(orderId: string): Promise<Assignment | undefined>;
 }
 
 /** Publishes events to the other services. */
