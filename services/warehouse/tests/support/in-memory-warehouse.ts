@@ -6,6 +6,7 @@ import type {
   Purchase,
   ReserveFromWaitingOutcome,
   ReserveOutcome,
+  ApplyPurchaseOutcome,
   Shortage,
   WarehouseRepository,
   WriteOutcome,
@@ -29,6 +30,7 @@ function perIngredient<T>(value: () => T): Record<Ingredient, T> {
  */
 export class InMemoryWarehouse implements WarehouseRepository {
   stock: Stock = stockOf({});
+  currentWorkdayId?: string;
   readonly demand = perIngredient<Demand>(() => ({ waitingNeed: 0, inFlight: 0 }));
   /** Bumped on every write that touches the ingredient, for optimistic concurrency. */
   private readonly versions = perIngredient(() => 0);
@@ -51,7 +53,16 @@ export class InMemoryWarehouse implements WarehouseRepository {
       return Promise.resolve('duplicate');
     }
     this.startedWorkdays.add(workdayId);
+    this.currentWorkdayId = workdayId;
     this.stock = { ...stock };
+    for (const ingredient of INGREDIENTS) {
+      this.demand[ingredient] = { waitingNeed: 0, inFlight: 0 };
+    }
+    for (const [shortageId, shortage] of this.shortages) {
+      if (!shortage.published) {
+        this.shortages.delete(shortageId);
+      }
+    }
     INGREDIENTS.forEach((ingredient) => {
       this.touch(ingredient);
     });
@@ -109,7 +120,15 @@ export class InMemoryWarehouse implements WarehouseRepository {
     return Promise.resolve('reserved');
   }
 
-  applyPurchase({ purchaseId, ingredient, quantity }: Purchase): Promise<WriteOutcome> {
+  applyPurchase({
+    purchaseId,
+    workdayId,
+    ingredient,
+    quantity,
+  }: Purchase): Promise<ApplyPurchaseOutcome> {
+    if (workdayId !== this.currentWorkdayId) {
+      return Promise.resolve('stale');
+    }
     if (this.processedPurchases.has(purchaseId)) {
       return Promise.resolve('duplicate');
     }

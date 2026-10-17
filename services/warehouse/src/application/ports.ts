@@ -34,8 +34,11 @@ export interface IngredientSnapshot {
 /** Units the market sold in one call. */
 export type Purchase = Pick<
   EventPayload<'IngredientPurchased'>,
-  'purchaseId' | 'ingredient' | 'quantity'
+  'purchaseId' | 'workdayId' | 'ingredient' | 'quantity'
 >;
+
+/** 'stale' means the purchase belongs to a previous workday and was left out (§3.7). */
+export type ApplyPurchaseOutcome = WriteOutcome | 'stale';
 
 /** A reservation made from the waiting list that the kitchen has not been told about yet. */
 export type PendingReservation = EventPayload<'IngredientsReserved'>;
@@ -45,7 +48,10 @@ export type Shortage = EventPayload<'StockShortage'>;
 
 /** Persistence port of the warehouse. Every method is atomic. */
 export interface WarehouseRepository {
-  /** Replaces the whole stock, at most once per workday. */
+  /**
+   * Makes the workday the active one: replaces the whole stock, resets the demand and drops
+   * the shortages not yet published. At most once per workday (§3.7).
+   */
   startWorkday(workdayId: string, stock: Stock): Promise<WriteOutcome>;
 
   /**
@@ -77,9 +83,10 @@ export interface WarehouseRepository {
 
   /**
    * Adds the units to the stock and subtracts them from the in-flight purchase, without going
-   * below 0 (the rest are leftovers). Applied at most once per purchase (§3.5).
+   * below 0 (the rest are leftovers). Applied at most once per purchase (§3.5), and only
+   * when it belongs to the active workday.
    */
-  applyPurchase(purchase: Purchase): Promise<WriteOutcome>;
+  applyPurchase(purchase: Purchase): Promise<ApplyPurchaseOutcome>;
 
   readIngredient(ingredient: Ingredient): Promise<IngredientSnapshot>;
 

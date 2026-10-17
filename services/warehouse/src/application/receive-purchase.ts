@@ -11,9 +11,18 @@ export function receivePurchase(deps: {
   publisher: EventPublisher;
 }) {
   return async (event: EventEnvelope<'IngredientPurchased'>): Promise<void> => {
-    const { purchaseId, ingredient, quantity } = event.payload;
-    // Even on a duplicate the rest runs again: the first attempt may have died halfway.
-    await deps.warehouse.applyPurchase({ purchaseId, ingredient, quantity });
+    const { purchaseId, workdayId, ingredient, quantity } = event.payload;
+    // A late purchase from a previous workday never alters the new one (§3.7). On a duplicate
+    // the rest runs again: the first attempt may have died halfway.
+    const outcome = await deps.warehouse.applyPurchase({
+      purchaseId,
+      workdayId,
+      ingredient,
+      quantity,
+    });
+    if (outcome === 'stale') {
+      return;
+    }
 
     // The domain picks the orders to serve (flexible FIFO); each one is then reserved
     // atomically, so an order another process took first is simply skipped.
