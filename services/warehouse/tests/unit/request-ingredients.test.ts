@@ -20,7 +20,7 @@ function ingredientsRequested(ingredients: IngredientQuantity[]) {
       workdayId: randomUUID(),
       recipeId: 'changua',
       recipeName: 'Changua con queso',
-      ingredients: ingredients as [IngredientQuantity, ...IngredientQuantity[]],
+      ingredients,
     },
     { correlationId: randomUUID() },
   );
