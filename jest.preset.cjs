@@ -12,6 +12,9 @@ module.exports = {
   moduleNameMapper: {
     '^@alegra-lunch/(.*)$': '<rootDir>/../../packages/$1/src',
   },
+  // Always measured, so CI fails when coverage drops below the PLANNING §6 target.
+  collectCoverage: true,
+  coverageReporters: ['text-summary', 'html'],
   collectCoverageFrom: ['<rootDir>/src/**/*.ts'],
   coverageThreshold: {
     global: { branches: 90, functions: 90, lines: 90, statements: 90 },
