@@ -90,7 +90,7 @@ describe('requestIngredients', () => {
 
       await handle(request);
 
-      expect(publisher.events).toHaveLength(1);
+      expect(publisher.ofType('IngredientsReserved')).toEqual([]);
       expect(publisher.ofType('OrderWaitingIngredients')).toEqual([
         expect.objectContaining({
           correlationId: request.correlationId,
@@ -127,6 +127,81 @@ describe('requestIngredients', () => {
       expect(warehouse.waitingList).toHaveLength(1);
       expect(warehouse.demand.onion.waitingNeed).toBe(1);
       expect(publisher.ofType('OrderWaitingIngredients')).toHaveLength(2);
+    });
+  });
+
+  describe('purchase requests to the market', () => {
+    it('requests only the missing ingredients', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ chicken: 5, potato: 5, rice: 5 });
+      const request = ingredientsRequested(ajiaco);
+
+      await handle(request);
+
+      expect(publisher.ofType('StockShortage')).toEqual([
+        expect.objectContaining({
+          correlationId: request.correlationId,
+          payload: {
+            shortageId: expect.any(String) as string,
+            workdayId: request.payload.workdayId,
+            ingredient: 'onion',
+            quantity: 1,
+          },
+        }),
+      ]);
+    });
+
+    it('keeps one active purchase per ingredient while orders keep arriving', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 10 });
+
+      await handle(ingredientsRequested(changua));
+      await handle(ingredientsRequested(changua));
+      await handle(ingredientsRequested(changua));
+
+      expect(publisher.ofType('StockShortage').map(({ payload }) => payload.quantity)).toEqual([1]);
+      expect(warehouse.demand.onion).toEqual({ waitingNeed: 3, inFlight: 1 });
+    });
+
+    it('requests a single purchase when two orders are evaluated at the same time', async () => {
+      const { warehouse, publisher, handle } = setup();
+
+      await Promise.all([
+        handle(ingredientsRequested(changua)),
+        handle(ingredientsRequested(changua)),
+      ]);
+
+      const onionShortages = publisher
+        .ofType('StockShortage')
+        .filter(({ payload }) => payload.ingredient === 'onion');
+      expect(onionShortages).toHaveLength(1);
+      expect(warehouse.demand.onion.inFlight).toBe(onionShortages[0]?.payload.quantity);
+    });
+
+    it('publishes the pending purchase on retry when the first attempt died before publishing it', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 10 });
+      const request = ingredientsRequested(changua);
+      publisher.failNext('StockShortage');
+
+      await expect(handle(request)).rejects.toThrow('Simulated failure');
+      expect(publisher.ofType('StockShortage')).toEqual([]);
+
+      await handle(request);
+
+      expect(publisher.ofType('StockShortage').map(({ payload }) => payload.quantity)).toEqual([1]);
+      expect(warehouse.demand.onion.inFlight).toBe(1);
+    });
+
+    it('does not publish the same purchase again once it was published', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 10 });
+      const request = ingredientsRequested(changua);
+
+      await handle(request);
+      await handle(request);
+
+      expect(publisher.ofType('StockShortage')).toHaveLength(1);
     });
   });
 
