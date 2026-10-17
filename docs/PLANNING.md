@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.9 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.10 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -17,6 +17,7 @@ Estado: **v1.9 — Aprobado (17/10/2026)**. Los cambios posteriores se registran
 | 1.7 | 17/10/2026 | §3.5 y §3.6: la reserva de un pedido que sale de la espera se guarda como **pendiente de publicar** y se republica hasta publicarse; así un plato no queda atascado si el proceso muere antes de avisar a la cocina |
 | 1.8 | 17/10/2026 | §3.7: la nueva jornada reinicia los contadores de demanda, y warehouse ignora las compras atrasadas de jornadas anteriores |
 | 1.9 | 17/10/2026 | §3.1: el catálogo de recetas de kitchen vive en el código, no en su tabla |
+| 1.10 | 17/10/2026 | §3.5: el backoff de market usa **full jitter** (espera al azar entre 0 y el tiempo base) |
 
 ---
 
@@ -290,7 +291,9 @@ que nadie va a comprar y la fórmula no volvería a emitir nada: los pedidos esp
 
 **2. El servicio market consume `StockShortage`.** La cola es SQS FIFO con `MessageGroupId = ingrediente`, así que hay una compra en curso por ingrediente y distintos ingredientes se compran en paralelo.
 - Llama a la plaza hasta acumular la cantidad pedida. La plaza decide cuánto vende en cada llamada (`quantitySold` puede ser menor o mayor).
-- Si recibe `0`, aplica *backoff* exponencial con jitter (1 s, 2 s, 4 s, 8 s, 10 s, 10 s…) y reintenta indefinidamente; el pedido nunca se pierde.
+- Si recibe `0`, aplica *backoff* exponencial con **full jitter** y reintenta indefinidamente; el pedido nunca se pierde.
+  - El tiempo base se duplica en cada intento hasta el tope: 1 s, 2 s, 4 s, 8 s, 10 s, 10 s…
+  - **Full jitter:** la espera real es un valor al azar entre 0 y el tiempo base. Así los reintentos de distintos ingredientes no llegan a la plaza todos en el mismo instante (*thundering herd*), sino repartidos. Es la variante que recomienda AWS en su guía *Exponential Backoff and Jitter*.
 - Registra cada compra en `purchases` (historial) y emite `IngredientPurchased(ingrediente, cantidad)`.
 
 **3. La bodega consume `IngredientPurchased`:**
