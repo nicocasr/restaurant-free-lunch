@@ -153,6 +153,22 @@ describe('receivePurchase', () => {
       expect(warehouse.stock).toEqual(stockOf({}));
     });
 
+    it('reserves an order only once when two purchases serve the waiting list at the same time', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 4, onion: 1 });
+      const order = waitingOrder(0, changua);
+      await warehouse.enqueue(order);
+
+      await Promise.all([
+        handle(ingredientPurchased('cheese', 1)),
+        handle(ingredientPurchased('onion', 1)),
+      ]);
+
+      // The same pending reservation may be published by both: consumers are idempotent
+      expect(new Set(reservedOrderIds(publisher))).toEqual(new Set([order.orderId]));
+      expect(warehouse.stock).toEqual(stockOf({ cheese: 3, onion: 1 }));
+    });
+
     it('does not tell the kitchen twice once the reservation was published', async () => {
       const { warehouse, publisher, handle } = setup();
       warehouse.stock = stockOf({ cheese: 2 });
@@ -163,6 +179,58 @@ describe('receivePurchase', () => {
       await handle(purchase);
 
       expect(publisher.ofType('IngredientsReserved')).toHaveLength(1);
+    });
+  });
+
+  describe('re-evaluating the demand', () => {
+    function shortages(publisher: InMemoryPublisher) {
+      return publisher.ofType('StockShortage').map(({ payload }) => ({
+        ingredient: payload.ingredient,
+        quantity: payload.quantity,
+      }));
+    }
+
+    it('requests what the remaining orders need once the purchase in flight completes', async () => {
+      // 5 Changuas wait for 1 onion each; the purchase in flight brings only 1
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 10 });
+      for (let minute = 0; minute < 5; minute++) {
+        await warehouse.enqueue(waitingOrder(minute, changua));
+      }
+      warehouse.demand.onion.inFlight = 1;
+
+      await handle(ingredientPurchased('onion', 1));
+
+      expect(publisher.ofType('IngredientsReserved')).toHaveLength(1);
+      expect(shortages(publisher)).toEqual([{ ingredient: 'onion', quantity: 4 }]);
+    });
+
+    it('requests nothing more while the purchase in flight has not completed', async () => {
+      const { warehouse, publisher, handle } = setup();
+      await warehouse.enqueue(waitingOrder(0, changua));
+      warehouse.demand.onion.inFlight = 5;
+      warehouse.demand.cheese.inFlight = 2;
+
+      await handle(ingredientPurchased('onion', 2));
+
+      expect(shortages(publisher)).toEqual([]);
+    });
+
+    it('requests an ingredient that other orders used up while an order was waiting', async () => {
+      // Onion arrives and the Caldo uses the last 2 potatoes: now the Ajiaco lacks potato,
+      // and no purchase of potato is in flight
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ chicken: 5, meat: 5, potato: 2, rice: 5 });
+      const ajiacoOrder = waitingOrder(0, ajiaco);
+      const caldoOrder = waitingOrder(1, caldo);
+      await warehouse.enqueue(ajiacoOrder);
+      await warehouse.enqueue(caldoOrder);
+      warehouse.demand.onion.inFlight = 2;
+
+      await handle(ingredientPurchased('onion', 2));
+
+      expect(reservedOrderIds(publisher)).toEqual([caldoOrder.orderId]);
+      expect(shortages(publisher)).toEqual([{ ingredient: 'potato', quantity: 3 }]);
     });
   });
 });
