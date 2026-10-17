@@ -31,6 +31,29 @@ describe('startWorkday', () => {
     expect(warehouse.stock).toEqual(initialStock());
   });
 
+  it('resets the demand, so a purchase left from the previous workday does not block the new one', async () => {
+    const warehouse = new InMemoryWarehouse();
+    warehouse.demand.onion.waitingNeed = 2;
+    warehouse.demand.onion.inFlight = 3;
+
+    await startWorkday({ warehouse })(workdayStarted(randomUUID()));
+
+    expect(warehouse.demand.onion).toEqual({ waitingNeed: 0, inFlight: 0 });
+  });
+
+  it('drops the purchase requests of the previous workday that were never published', async () => {
+    const warehouse = new InMemoryWarehouse();
+    const { version } = await warehouse.readIngredient('onion');
+    await warehouse.registerShortage(
+      { shortageId: randomUUID(), workdayId: randomUUID(), ingredient: 'onion', quantity: 2 },
+      version,
+    );
+
+    await startWorkday({ warehouse })(workdayStarted(randomUUID()));
+
+    expect(await warehouse.pendingShortages('onion')).toEqual([]);
+  });
+
   it('ignores a repeated WorkdayStarted, so it never resets the stock in the middle of a workday', async () => {
     const warehouse = new InMemoryWarehouse();
     const handle = startWorkday({ warehouse });

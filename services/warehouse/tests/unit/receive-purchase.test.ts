@@ -23,13 +23,17 @@ function reservedOrderIds(publisher: InMemoryPublisher): string[] {
   return publisher.ofType('IngredientsReserved').map(({ payload }) => payload.orderId);
 }
 
-function ingredientPurchased(ingredient: Ingredient, quantity: number) {
+function ingredientPurchased(
+  ingredient: Ingredient,
+  quantity: number,
+  purchaseWorkday = workdayId,
+) {
   return createEvent(
     'IngredientPurchased',
     {
       purchaseId: randomUUID(),
       shortageId: randomUUID(),
-      workdayId: randomUUID(),
+      workdayId: purchaseWorkday,
       ingredient,
       quantity,
     },
@@ -39,6 +43,7 @@ function ingredientPurchased(ingredient: Ingredient, quantity: number) {
 
 function setup() {
   const warehouse = new InMemoryWarehouse();
+  warehouse.currentWorkdayId = workdayId;
   const publisher = new InMemoryPublisher();
   return { warehouse, publisher, handle: receivePurchase({ warehouse, publisher }) };
 }
@@ -83,6 +88,21 @@ describe('receivePurchase', () => {
 
       expect(warehouse.stock.onion).toBe(2);
       expect(warehouse.demand.onion.inFlight).toBe(4);
+    });
+  });
+
+  describe('a late purchase from a previous workday', () => {
+    it('is left out of the stock and the demand of the current workday', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 2 });
+      warehouse.demand.onion.inFlight = 3;
+      await warehouse.enqueue(waitingOrder(0, changua));
+
+      await handle(ingredientPurchased('onion', 3, randomUUID()));
+
+      expect(warehouse.stock).toEqual(stockOf({ cheese: 2 }));
+      expect(warehouse.demand.onion.inFlight).toBe(3);
+      expect(publisher.events).toEqual([]);
     });
   });
 
