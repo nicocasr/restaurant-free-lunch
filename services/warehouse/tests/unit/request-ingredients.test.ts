@@ -11,6 +11,12 @@ const changua: IngredientQuantity[] = [
   { ingredient: 'cheese', quantity: 2 },
   { ingredient: 'onion', quantity: 1 },
 ];
+const ajiaco: IngredientQuantity[] = [
+  { ingredient: 'chicken', quantity: 2 },
+  { ingredient: 'potato', quantity: 3 },
+  { ingredient: 'onion', quantity: 1 },
+  { ingredient: 'rice', quantity: 1 },
+];
 
 function ingredientsRequested(ingredients: IngredientQuantity[]) {
   return createEvent(
@@ -57,6 +63,70 @@ describe('requestIngredients', () => {
           payload: { orderId: request.payload.orderId, workdayId: request.payload.workdayId },
         }),
       ]);
+    });
+  });
+
+  describe('when some ingredient is short', () => {
+    // Plenty of everything except onion
+    const stockWithoutOnion = stockOf({ chicken: 5, potato: 5, rice: 5 });
+
+    it('deducts nothing and puts the order in the waiting list', async () => {
+      const { warehouse, handle } = setup();
+      warehouse.stock = stockWithoutOnion;
+      const request = ingredientsRequested(ajiaco);
+
+      await handle(request);
+
+      expect(warehouse.stock).toEqual(stockWithoutOnion);
+      expect(warehouse.waitingList).toEqual([
+        { orderId: request.payload.orderId, waitingSince: request.occurredAt, needs: ajiaco },
+      ]);
+    });
+
+    it('tells orders and the dashboard exactly what the order lacks', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockWithoutOnion;
+      const request = ingredientsRequested(ajiaco);
+
+      await handle(request);
+
+      expect(publisher.events).toHaveLength(1);
+      expect(publisher.ofType('OrderWaitingIngredients')).toEqual([
+        expect.objectContaining({
+          correlationId: request.correlationId,
+          payload: {
+            orderId: request.payload.orderId,
+            workdayId: request.payload.workdayId,
+            missing: [{ ingredient: 'onion', quantity: 1 }],
+          },
+        }),
+      ]);
+    });
+
+    it('adds the need of every ingredient of the order to the demand, not only the missing ones', async () => {
+      const { warehouse, handle } = setup();
+      warehouse.stock = stockWithoutOnion;
+
+      await handle(ingredientsRequested(ajiaco));
+
+      expect(warehouse.demand.onion.waitingNeed).toBe(1);
+      expect(warehouse.demand.potato.waitingNeed).toBe(3);
+      expect(warehouse.demand.chicken.waitingNeed).toBe(2);
+      expect(warehouse.demand.rice.waitingNeed).toBe(1);
+      expect(warehouse.demand.cheese.waitingNeed).toBe(0);
+    });
+
+    it('lists the order and counts its need once when the message arrives twice', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockWithoutOnion;
+      const request = ingredientsRequested(ajiaco);
+
+      await handle(request);
+      await handle(request);
+
+      expect(warehouse.waitingList).toHaveLength(1);
+      expect(warehouse.demand.onion.waitingNeed).toBe(1);
+      expect(publisher.ofType('OrderWaitingIngredients')).toHaveLength(2);
     });
   });
 
