@@ -31,6 +31,12 @@ export interface IngredientSnapshot {
   version: number;
 }
 
+/** Units the market sold in one call. */
+export type Purchase = Pick<
+  EventPayload<'IngredientPurchased'>,
+  'purchaseId' | 'ingredient' | 'quantity'
+>;
+
 /** A purchase request to the market, kept as pending until it is published (§3.5). */
 export type Shortage = EventPayload<'StockShortage'>;
 
@@ -56,6 +62,12 @@ export interface WarehouseRepository {
    * and subtracts its need from the demand. Only one process can take out the same order.
    */
   reserveFromWaiting(order: WaitingOrder): Promise<ReserveFromWaitingOutcome>;
+
+  /**
+   * Adds the units to the stock and subtracts them from the in-flight purchase, without going
+   * below 0 (the rest are leftovers). Applied at most once per purchase (§3.5).
+   */
+  applyPurchase(purchase: Purchase): Promise<WriteOutcome>;
 
   readIngredient(ingredient: Ingredient): Promise<IngredientSnapshot>;
 
