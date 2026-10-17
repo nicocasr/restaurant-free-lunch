@@ -79,7 +79,12 @@ describe('requestIngredients', () => {
 
       expect(warehouse.stock).toEqual(stockWithoutOnion);
       expect(warehouse.waitingList).toEqual([
-        { orderId: request.payload.orderId, waitingSince: request.occurredAt, needs: ajiaco },
+        {
+          orderId: request.payload.orderId,
+          workdayId: request.payload.workdayId,
+          waitingSince: request.occurredAt,
+          needs: ajiaco,
+        },
       ]);
     });
 

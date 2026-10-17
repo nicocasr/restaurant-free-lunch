@@ -5,6 +5,7 @@ import type { Stock } from './stock';
 
 export interface WaitingOrder {
   orderId: string;
+  workdayId: string;
   /** ISO timestamp of when the order joined the waiting list. */
   waitingSince: string;
   needs: IngredientQuantity[];

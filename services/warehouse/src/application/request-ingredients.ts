@@ -24,7 +24,7 @@ export function requestIngredients(deps: {
     }
 
     // The event time keeps the order's place in line when the message is redelivered.
-    const order = { orderId, waitingSince: event.occurredAt, needs: ingredients };
+    const order = { orderId, workdayId, waitingSince: event.occurredAt, needs: ingredients };
     await deps.warehouse.enqueue(order);
 
     // Lost wakeup: stock may have arrived after the failed reservation but before the order

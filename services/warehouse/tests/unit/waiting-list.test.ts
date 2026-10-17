@@ -22,6 +22,7 @@ const changua: IngredientQuantity[] = [
 function waiting(orderId: string, minute: number, needs: IngredientQuantity[]): WaitingOrder {
   return {
     orderId,
+    workdayId: 'workday-1',
     waitingSince: `2026-10-22T12:${String(minute).padStart(2, '0')}:00.000Z`,
     needs,
   };
