@@ -1,0 +1,15 @@
+{
+  "name": "@alegra-lunch/kitchen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Picks a random recipe for each order, asks the warehouse for its ingredients and delivers the dish",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@alegra-lunch/contracts": "0.1.0"
+  }
+}
