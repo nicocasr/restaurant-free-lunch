@@ -1,11 +1,27 @@
 import { randomUUID } from 'node:crypto';
 
-import { createEvent, type Ingredient } from '@alegra-lunch/contracts';
+import { createEvent, type Ingredient, type IngredientQuantity } from '@alegra-lunch/contracts';
 
 import { receivePurchase } from '../../src/application/receive-purchase';
 import { InMemoryPublisher } from '../support/in-memory-publisher';
 import { InMemoryWarehouse } from '../support/in-memory-warehouse';
+import { ajiaco, caldo, changua } from '../support/recipes';
 import { stockOf } from '../support/stock';
+
+const workdayId = randomUUID();
+
+function waitingOrder(minute: number, needs: IngredientQuantity[]) {
+  return {
+    orderId: randomUUID(),
+    workdayId,
+    waitingSince: `2026-10-22T12:${String(minute).padStart(2, '0')}:00.000Z`,
+    needs,
+  };
+}
+
+function reservedOrderIds(publisher: InMemoryPublisher): string[] {
+  return publisher.ofType('IngredientsReserved').map(({ payload }) => payload.orderId);
+}
 
 function ingredientPurchased(ingredient: Ingredient, quantity: number) {
   return createEvent(
@@ -67,6 +83,86 @@ describe('receivePurchase', () => {
 
       expect(warehouse.stock.onion).toBe(2);
       expect(warehouse.demand.onion.inFlight).toBe(4);
+    });
+  });
+
+  describe('serving the waiting list', () => {
+    it('serves a newer order that fits when the oldest one still does not (flexible FIFO)', async () => {
+      // 2 potatoes arrive: the Ajiaco (#1) needs 3, the Caldo (#2) needs 2
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ chicken: 5, meat: 5, onion: 5, rice: 5 });
+      const first = waitingOrder(0, ajiaco);
+      const second = waitingOrder(1, caldo);
+      await warehouse.enqueue(first);
+      await warehouse.enqueue(second);
+
+      await handle(ingredientPurchased('potato', 2));
+
+      expect(reservedOrderIds(publisher)).toEqual([second.orderId]);
+      expect(publisher.ofType('IngredientsReserved')[0]?.payload.workdayId).toBe(workdayId);
+      expect(warehouse.waitingList).toEqual([first]);
+      expect(warehouse.stock).toEqual(stockOf({ chicken: 5, meat: 3, onion: 4, rice: 5 }));
+    });
+
+    it('serves every order it can, oldest first', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 6 });
+      const [third, first, second] = [
+        waitingOrder(2, changua),
+        waitingOrder(0, changua),
+        waitingOrder(1, changua),
+      ];
+      for (const order of [third, first, second]) {
+        await warehouse.enqueue(order);
+      }
+
+      await handle(ingredientPurchased('onion', 3));
+
+      expect(reservedOrderIds(publisher)).toEqual([first.orderId, second.orderId, third.orderId]);
+      expect(warehouse.waitingList).toEqual([]);
+      expect(warehouse.demand.onion.waitingNeed).toBe(0);
+      expect(warehouse.demand.cheese.waitingNeed).toBe(0);
+    });
+
+    it('keeps everyone waiting and tells the kitchen nothing when no order fits yet', async () => {
+      const { warehouse, publisher, handle } = setup();
+      const order = waitingOrder(0, ajiaco);
+      await warehouse.enqueue(order);
+
+      await handle(ingredientPurchased('onion', 1));
+
+      expect(publisher.ofType('IngredientsReserved')).toEqual([]);
+      expect(warehouse.waitingList).toEqual([order]);
+    });
+
+    it('tells the kitchen on retry when the first attempt died before publishing the reservation', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 2 });
+      const order = waitingOrder(0, changua);
+      await warehouse.enqueue(order);
+      const purchase = ingredientPurchased('onion', 1);
+      publisher.failNext('IngredientsReserved');
+
+      await expect(handle(purchase)).rejects.toThrow('Simulated failure');
+      // The order already left the waiting list: only its pending reservation can save it
+      expect(warehouse.waitingList).toEqual([]);
+
+      await handle(purchase);
+
+      expect(reservedOrderIds(publisher)).toEqual([order.orderId]);
+      expect(warehouse.stock).toEqual(stockOf({}));
+    });
+
+    it('does not tell the kitchen twice once the reservation was published', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 2 });
+      await warehouse.enqueue(waitingOrder(0, changua));
+      const purchase = ingredientPurchased('onion', 1);
+
+      await handle(purchase);
+      await handle(purchase);
+
+      expect(publisher.ofType('IngredientsReserved')).toHaveLength(1);
     });
   });
 });

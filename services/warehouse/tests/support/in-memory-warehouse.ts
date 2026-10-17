@@ -2,8 +2,9 @@ import { INGREDIENTS, type Ingredient, type IngredientQuantity } from '@alegra-l
 
 import type {
   IngredientSnapshot,
-  ReserveFromWaitingOutcome,
+  PendingReservation,
   Purchase,
+  ReserveFromWaitingOutcome,
   ReserveOutcome,
   Shortage,
   WarehouseRepository,
@@ -34,6 +35,8 @@ export class InMemoryWarehouse implements WarehouseRepository {
   private readonly startedWorkdays = new Set<string>();
   private readonly reservations = new Set<string>();
   private readonly processedPurchases = new Set<string>();
+  /** Reservations made from the waiting list that the kitchen has not been told about yet. */
+  private readonly pendingReservationsById = new Map<string, PendingReservation>();
   private readonly waiting = new Map<string, WaitingOrder>();
   private readonly shortages = new Map<string, Shortage & { published: boolean }>();
   /** Lets a test run something right before an order is enqueued, to simulate a race. */
@@ -94,6 +97,10 @@ export class InMemoryWarehouse implements WarehouseRepository {
     }
     this.waiting.delete(order.orderId);
     this.reservations.add(order.orderId);
+    this.pendingReservationsById.set(order.orderId, {
+      orderId: order.orderId,
+      workdayId: order.workdayId,
+    });
     this.stock = result.stock;
     for (const { ingredient, quantity } of order.needs) {
       this.demand[ingredient].waitingNeed -= quantity;
@@ -112,6 +119,23 @@ export class InMemoryWarehouse implements WarehouseRepository {
     demand.inFlight = Math.max(0, demand.inFlight - quantity);
     this.touch(ingredient);
     return Promise.resolve('applied');
+  }
+
+  readStock(): Promise<Stock> {
+    return Promise.resolve({ ...this.stock });
+  }
+
+  waitingOrders(): Promise<WaitingOrder[]> {
+    return Promise.resolve(this.waitingList);
+  }
+
+  pendingReservations(): Promise<PendingReservation[]> {
+    return Promise.resolve([...this.pendingReservationsById.values()]);
+  }
+
+  markReservationPublished(orderId: string): Promise<void> {
+    this.pendingReservationsById.delete(orderId);
+    return Promise.resolve();
   }
 
   readIngredient(ingredient: Ingredient): Promise<IngredientSnapshot> {
