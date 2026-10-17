@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.10 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.11 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -18,6 +18,7 @@ Estado: **v1.10 — Aprobado (17/10/2026)**. Los cambios posteriores se registra
 | 1.8 | 17/10/2026 | §3.7: la nueva jornada reinicia los contadores de demanda, y warehouse ignora las compras atrasadas de jornadas anteriores |
 | 1.9 | 17/10/2026 | §3.1: el catálogo de recetas de kitchen vive en el código, no en su tabla |
 | 1.10 | 17/10/2026 | §3.5: el backoff de market usa **full jitter** (espera al azar entre 0 y el tiempo base) |
+| 1.11 | 17/10/2026 | §3.3: los reintentos de market los hace la cola (visibilidad del mensaje), con la DLQ sin `maxReceiveCount` y esperas en segundos enteros |
 
 ---
 
@@ -208,11 +209,29 @@ sequenceDiagram
 | Miles de clics o pedidos de golpe | `POST /orders` responde **202 Accepted** de inmediato y el trabajo se encola. Cantidad máxima por pedido configurable y validada. Rate limiting en API Gateway. El botón se deshabilita mientras hay un envío en curso. |
 | Dos pedidos consumen el mismo stock (*race condition*) | Reserva atómica con **DynamoDB TransactWriteItems** y condición `quantity >= requerido` sobre todos los ingredientes de la receta (todo o nada). |
 | Avalancha de compras a la plaza por el mismo ingrediente | **Demanda agregada**: la bodega consolida los faltantes de todos los pedidos en espera y solo pide comprar la diferencia (§3.5). Además, la cola **SQS FIFO** de market usa `MessageGroupId = ingredient`: una compra en curso por ingrediente. |
-| La plaza responde `0` | Reintentos indefinidos con *backoff* exponencial con jitter y **tope de 10 s**, sin bloquear otros ingredientes. Se implementa extendiendo la visibilidad del mensaje SQS (`ChangeMessageVisibility`), así que el mensaje nunca se pierde. La DLQ queda solo para mensajes inválidos (fallan la validación zod). |
+| La plaza responde `0` | Reintentos indefinidos con *backoff* exponencial con jitter y **tope de 10 s**, sin bloquear otros ingredientes. Se implementa extendiendo la visibilidad del mensaje SQS (`ChangeMessageVisibility`), así que el mensaje nunca se pierde. La DLQ queda solo para mensajes inválidos (fallan la validación zod). Ver detalles abajo. |
 | Entregas duplicadas (SQS es *at-least-once*) | Handlers **idempotentes**; la base de datos es el árbitro mediante escrituras condicionales (ver §3.6). |
 | Inanición de pedidos en espera | Lista de espera **FIFO flexible**: se intenta primero el más antiguo; si no alcanza, se sigue con el siguiente. Las compras para el pedido saltado siguen en curso, así que su espera es acotada (ver §3.5). |
 | Miles de eventos por segundo hacia el dashboard | realtime agrupa los cambios y envía un paquete cada ~500 ms: el número de mensajes WebSocket depende del tiempo y no del volumen de pedidos. El frontend descarta eventos ya aplicados (`eventId`). |
 | Ingrediente "caliente" (`onion` está en los 6 platos) | Se documenta. La compra anticipada queda como mejora futura y como tema para el asistente IA. |
+
+#### Reintentos de market: la cola espera, no el proceso
+
+Cuando la plaza responde `0`, market **no se queda esperando**: devuelve "reintentar en N segundos" y termina.
+El *entrypoint* llama a `ChangeMessageVisibility`, así que el mensaje se oculta ese tiempo y vuelve solo a la cola. En Docker, el *poller* hace lo mismo.
+El progreso (cuánto se ha comprado y cuántos intentos fallidos lleva) se guarda en `purchases`, así que cada reintento retoma donde quedó.
+
+| Alternativa | Por qué se descarta |
+|-------------|---------------------|
+| Dormir dentro de la Lambda | Se paga cada segundo dormido y Lambda corta a los 15 minutos: no caben reintentos indefinidos |
+| Reencolar con `DelaySeconds` | Las colas FIFO no aceptan retraso por mensaje, y se perdería el orden por ingrediente |
+| Step Functions con estados `Wait` | Otro servicio más, cobra por transición (podría salir del free tier con miles de pedidos) y LocalStack lo emula a medias |
+
+Ventaja adicional: mientras el mensaje está oculto, la cola FIFO **no entrega otra compra del mismo ingrediente**, que es la regla "una compra en curso por ingrediente".
+
+**Dos ajustes necesarios:**
+- **DLQ sin `maxReceiveCount` en la cola de market.** Con reintentos indefinidos, SQS movería a la DLQ una compra que solo está esperando a la plaza. El código envía a la DLQ únicamente los mensajes que fallan la validación zod.
+- **Segundos enteros.** `ChangeMessageVisibility` acepta segundos, no milisegundos: la espera se redondea hacia arriba al segundo. El jitter sigue repartiendo los reintentos, con resolución de 1 s.
 
 ### 3.4 Estructura hexagonal de cada servicio
 
