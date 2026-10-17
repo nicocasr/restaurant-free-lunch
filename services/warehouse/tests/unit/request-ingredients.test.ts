@@ -163,7 +163,9 @@ describe('requestIngredients', () => {
       expect(warehouse.demand.onion).toEqual({ waitingNeed: 3, inFlight: 1 });
     });
 
-    it('requests a single purchase when two orders are evaluated at the same time', async () => {
+    // Both evaluations may publish the same pending shortage: delivery is at-least-once and the
+    // market is idempotent per shortageId (§3.6). What must never happen is two shortages.
+    it('registers a single purchase when two orders are evaluated at the same time', async () => {
       const { warehouse, publisher, handle } = setup();
 
       await Promise.all([
@@ -174,7 +176,8 @@ describe('requestIngredients', () => {
       const onionShortages = publisher
         .ofType('StockShortage')
         .filter(({ payload }) => payload.ingredient === 'onion');
-      expect(onionShortages).toHaveLength(1);
+      const distinct = new Set(onionShortages.map(({ payload }) => payload.shortageId));
+      expect(distinct.size).toBe(1);
       expect(warehouse.demand.onion.inFlight).toBe(onionShortages[0]?.payload.quantity);
     });
 

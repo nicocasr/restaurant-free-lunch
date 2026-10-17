@@ -44,7 +44,9 @@ export class InMemoryWarehouse implements WarehouseRepository {
     }
     this.startedWorkdays.add(workdayId);
     this.stock = { ...stock };
-    INGREDIENTS.forEach((ingredient) => this.touch(ingredient));
+    INGREDIENTS.forEach((ingredient) => {
+      this.touch(ingredient);
+    });
     return Promise.resolve('applied');
   }
 
@@ -58,7 +60,9 @@ export class InMemoryWarehouse implements WarehouseRepository {
     }
     this.reservations.add(orderId);
     this.stock = result.stock;
-    needs.forEach(({ ingredient }) => this.touch(ingredient));
+    needs.forEach(({ ingredient }) => {
+      this.touch(ingredient);
+    });
     return Promise.resolve({ status: 'reserved' });
   }
 
@@ -96,7 +100,12 @@ export class InMemoryWarehouse implements WarehouseRepository {
     return Promise.resolve(
       [...this.shortages.values()]
         .filter((shortage) => shortage.ingredient === ingredient && !shortage.published)
-        .map(({ published: _published, ...shortage }) => shortage),
+        .map(({ shortageId, workdayId, quantity }) => ({
+          shortageId,
+          workdayId,
+          ingredient,
+          quantity,
+        })),
     );
   }
 
