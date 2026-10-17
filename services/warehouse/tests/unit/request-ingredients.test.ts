@@ -59,4 +59,45 @@ describe('requestIngredients', () => {
       ]);
     });
   });
+
+  describe('when the same message arrives twice (SQS is at-least-once)', () => {
+    it('deducts the ingredients only once', async () => {
+      const { warehouse, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 5, onion: 5 });
+      const request = ingredientsRequested(changua);
+
+      await handle(request);
+      await handle(request);
+
+      expect(warehouse.stock).toEqual(stockOf({ cheese: 3, onion: 4 }));
+    });
+
+    it('publishes IngredientsReserved again, in case the first attempt died before publishing', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 5, onion: 5 });
+      const request = ingredientsRequested(changua);
+
+      await handle(request);
+      await handle(request);
+
+      const reserved = publisher.ofType('IngredientsReserved');
+      expect(reserved).toHaveLength(2);
+      expect(reserved[1]?.payload).toEqual(reserved[0]?.payload);
+    });
+
+    it('still treats it as reserved when the first attempt used the last units', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 2, onion: 1 });
+      const request = ingredientsRequested(changua);
+
+      await handle(request);
+      await handle(request);
+
+      expect(warehouse.stock).toEqual(stockOf({}));
+      expect(publisher.events.map(({ type }) => type)).toEqual([
+        'IngredientsReserved',
+        'IngredientsReserved',
+      ]);
+    });
+  });
 });

@@ -16,6 +16,7 @@ import { stockOf } from './stock';
 export class InMemoryWarehouse implements WarehouseRepository {
   stock: Stock = stockOf({});
   private readonly startedWorkdays = new Set<string>();
+  private readonly reservations = new Set<string>();
 
   startWorkday(workdayId: string, stock: Stock): Promise<WriteOutcome> {
     if (this.startedWorkdays.has(workdayId)) {
@@ -26,11 +27,15 @@ export class InMemoryWarehouse implements WarehouseRepository {
     return Promise.resolve('applied');
   }
 
-  reserve(_orderId: string, needs: readonly IngredientQuantity[]): Promise<ReserveOutcome> {
+  reserve(orderId: string, needs: readonly IngredientQuantity[]): Promise<ReserveOutcome> {
+    if (this.reservations.has(orderId)) {
+      return Promise.resolve({ status: 'duplicate' });
+    }
     const result = reserve(this.stock, needs);
     if (!result.reserved) {
       return Promise.resolve({ status: 'insufficient', missing: result.missing });
     }
+    this.reservations.add(orderId);
     this.stock = result.stock;
     return Promise.resolve({ status: 'reserved' });
   }
