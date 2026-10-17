@@ -3,6 +3,7 @@ import { INGREDIENTS, type Ingredient, type IngredientQuantity } from '@alegra-l
 import type {
   IngredientSnapshot,
   ReserveFromWaitingOutcome,
+  Purchase,
   ReserveOutcome,
   Shortage,
   WarehouseRepository,
@@ -32,6 +33,7 @@ export class InMemoryWarehouse implements WarehouseRepository {
   private readonly versions = perIngredient(() => 0);
   private readonly startedWorkdays = new Set<string>();
   private readonly reservations = new Set<string>();
+  private readonly processedPurchases = new Set<string>();
   private readonly waiting = new Map<string, WaitingOrder>();
   private readonly shortages = new Map<string, Shortage & { published: boolean }>();
   /** Lets a test run something right before an order is enqueued, to simulate a race. */
@@ -98,6 +100,18 @@ export class InMemoryWarehouse implements WarehouseRepository {
       this.touch(ingredient);
     }
     return Promise.resolve('reserved');
+  }
+
+  applyPurchase({ purchaseId, ingredient, quantity }: Purchase): Promise<WriteOutcome> {
+    if (this.processedPurchases.has(purchaseId)) {
+      return Promise.resolve('duplicate');
+    }
+    this.processedPurchases.add(purchaseId);
+    this.stock = { ...this.stock, [ingredient]: this.stock[ingredient] + quantity };
+    const demand = this.demand[ingredient];
+    demand.inFlight = Math.max(0, demand.inFlight - quantity);
+    this.touch(ingredient);
+    return Promise.resolve('applied');
   }
 
   readIngredient(ingredient: Ingredient): Promise<IngredientSnapshot> {
