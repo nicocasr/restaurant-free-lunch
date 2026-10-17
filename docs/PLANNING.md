@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.7 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.8 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -15,6 +15,7 @@ Estado: **v1.7 — Aprobado (17/10/2026)**. Los cambios posteriores se registran
 | 1.5 | 17/10/2026 | §3.5: el pedido en espera suma a `waitingNeed` **todos** sus ingredientes, no solo los faltantes; así no queda atascado si el stock que sí había se gasta mientras espera |
 | 1.6 | 17/10/2026 | §3.5: **un faltante activo por ingrediente** (no se emite otro mientras `inFlight > 0`), para no comprar de más. §3.5 y §3.6: el faltante se guarda como **pendiente** junto con `inFlight` y se republica hasta publicarse |
 | 1.7 | 17/10/2026 | §3.5 y §3.6: la reserva de un pedido que sale de la espera se guarda como **pendiente de publicar** y se republica hasta publicarse; así un plato no queda atascado si el proceso muere antes de avisar a la cocina |
+| 1.8 | 17/10/2026 | §3.7: la nueva jornada reinicia los contadores de demanda, y warehouse ignora las compras atrasadas de jornadas anteriores |
 
 ---
 
@@ -423,7 +424,12 @@ Una **jornada** (`workday`) es un evento de donación, de principio a fin. Todo 
 2. orders valida que **no haya pedidos en curso** (ningún pedido distinto de `DELIVERED`) en la jornada actual. Si los hay, responde `409 Conflict` y el dashboard explica por qué el botón está deshabilitado.
 3. orders cambia la jornada activa con una escritura condicional (la BD como árbitro: dos clics simultáneos no crean dos jornadas) y emite `WorkdayStarted(workdayId)`.
 4. **warehouse** consume `WorkdayStarted` y deja **5 unidades** de cada ingrediente. Es idempotente por `workdayId`.
+   En la misma escritura reinicia los contadores de demanda (`waitingNeed` e `inFlight` en 0) y descarta los faltantes aún no publicados.
 5. **market** y **orders** etiquetan los nuevos registros con el `workdayId` activo.
+
+**Compras atrasadas de una jornada anterior:** puede quedar una compra en curso al cerrar una jornada (por ejemplo, la plaza respondía `0` y market seguía reintentando).
+Cuando esa compra llega, warehouse la **ignora**: compara su `workdayId` con la jornada activa, en la misma escritura condicional.
+La compra queda en el historial de market, pero no entra al stock de la nueva jornada. Así se cumple R4 en cada jornada: la bodega empieza con 5 y nada de la jornada anterior lo altera.
 
 **Historial:** no se borra nada. El dashboard muestra la jornada actual y permite consultar las anteriores. El asistente IA puede comparar jornadas.
 
@@ -433,7 +439,9 @@ Una **jornada** (`workday`) es un evento de donación, de principio a fin. Todo 
 - con pedidos en curso → no permite nueva jornada;
 - sin pedidos en curso → crea la jornada y la bodega vuelve a 5;
 - dos solicitudes simultáneas → una sola jornada nueva;
-- `WorkdayStarted` repetido → no altera el inventario dos veces.
+- `WorkdayStarted` repetido → no altera el inventario dos veces;
+- nueva jornada con una compra en curso → los contadores de demanda vuelven a 0;
+- llega una compra de una jornada anterior → no entra al stock.
 
 ### 3.8 Validación en tiempo de ejecución (zod)
 
