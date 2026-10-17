@@ -21,6 +21,9 @@ export type ReserveOutcome =
   | { status: 'duplicate' }
   | { status: 'insufficient'; missing: IngredientQuantity[] };
 
+/** 'not-waiting' means another process already took the order out of the waiting list. */
+export type ReserveFromWaitingOutcome = 'reserved' | 'insufficient' | 'not-waiting';
+
 /** Current state of one ingredient, with the version used for optimistic concurrency. */
 export interface IngredientSnapshot {
   stock: number;
@@ -47,6 +50,12 @@ export interface WarehouseRepository {
    * its ingredients to the aggregated demand (§3.5). An order is listed at most once.
    */
   enqueue(order: WaitingOrder): Promise<WriteOutcome>;
+
+  /**
+   * Reserves a waiting order and, in the same transaction, takes it out of the waiting list
+   * and subtracts its need from the demand. Only one process can take out the same order.
+   */
+  reserveFromWaiting(order: WaitingOrder): Promise<ReserveFromWaitingOutcome>;
 
   readIngredient(ingredient: Ingredient): Promise<IngredientSnapshot>;
 
