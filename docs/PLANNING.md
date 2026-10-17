@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.5 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.6 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -13,6 +13,7 @@ Estado: **v1.5 — Aprobado (17/10/2026)**. Los cambios posteriores se registran
 | 1.3 | 16/10/2026 | §3.8: justificación de la validación en tiempo de ejecución con zod |
 | 1.4 | 16/10/2026 | §3.6: ante un duplicado, el handler **republica** el evento resultante; así no se pierde si el proceso murió entre la escritura y la publicación |
 | 1.5 | 17/10/2026 | §3.5: el pedido en espera suma a `waitingNeed` **todos** sus ingredientes, no solo los faltantes; así no queda atascado si el stock que sí había se gasta mientras espera |
+| 1.6 | 17/10/2026 | §3.5: **un faltante activo por ingrediente** (no se emite otro mientras `inFlight > 0`), para no comprar de más. §3.5 y §3.6: el faltante se guarda como **pendiente** junto con `inFlight` y se republica hasta publicarse |
 
 ---
 
@@ -260,15 +261,29 @@ que dos pedidos consuman la misma unidad (*race condition*).
 | `inFlight` | Unidades que ya se le pidió comprar a market y aún no han llegado |
 
 ```
-porComprar = waitingNeed − stock − inFlight
-si porComprar > 0 → inFlight += porComprar (escritura condicional) y se emite StockShortage(porComprar)
+si inFlight > 0 → no se emite nada (ya hay una compra en curso de ese ingrediente)
+si no: porComprar = waitingNeed − stock
+       si porComprar > 0 → inFlight = porComprar (escritura condicional) y se emite StockShortage(porComprar)
 ```
 
-- La compra es **por ingrediente, no por pedido**. Si 200 pedidos esperan cebolla, se emite un faltante consolidado, no 200.
-- La escritura condicional sobre `inFlight` (la BD como árbitro, §3.6) evita que dos evaluaciones simultáneas pidan comprar lo mismo dos veces.
+- La compra es **por ingrediente, no por pedido**, con **un solo faltante activo por ingrediente**. Mientras se compra, los pedidos nuevos solo suman a `waitingNeed`.
+- Cuando `inFlight` vuelve a 0 (la compra se completó), se reevalúa y sale **un** faltante por todo lo acumulado.
+- La escritura condicional (la BD como árbitro, §3.6) evita que dos evaluaciones simultáneas emitan dos faltantes.
 - Las **sobras** (la plaza vende más de lo pedido) entran al stock y se descuentan de la próxima evaluación, así que nunca provocan compras extra.
 
-> Ejemplo: 3 pedidos esperan 1 cebolla cada uno, con stock 0 → `porComprar = 3`. La plaza vende 4 → se atienden los 3 y sobra 1. `porComprar` queda en `≤ 0`, así que no hay más compras.
+**Por qué un solo faltante activo:** no podemos decirle a la plaza cuánto vender; ella decide (1 a 4 por llamada en las pruebas).
+Si cada pedido emitiera su propio faltante, 3 Changuas seguidas generarían 3 faltantes de 1 cebolla. Market, que no conoce el stock
+de la bodega, los compraría los tres aunque el primero ya hubiera traído suficiente: se necesitan 3 y podrían comprarse 9.
+Con un faltante activo, las sobras se limitan a la última llamada de cada compra.
+
+> Ejemplo: 200 Changuas esperan 1 cebolla, con stock 0. La primera emite `StockShortage(1)`; las otras 199 solo suman a `waitingNeed`.
+> La plaza vende 4 → salen 4 pedidos y `inFlight` vuelve a 0. Se reevalúa: `porComprar = 196` → un solo `StockShortage(196)`.
+> En total, **2 faltantes en vez de 200**.
+
+**Faltante pendiente (protección contra caídas):** en la **misma escritura** que fija `inFlight` se guarda `shortages/<shortageId>` como **pendiente**.
+Tras publicar el `StockShortage`, se marca como publicado. Cada evaluación del ingrediente republica los pendientes.
+Así, si el proceso muere entre la escritura y la publicación, el faltante no se pierde. Sin esto, `inFlight` quedaría contando unidades
+que nadie va a comprar y la fórmula no volvería a emitir nada: los pedidos esperarían para siempre. Market es idempotente por `shortageId`, así que republicar es seguro.
 
 **2. El servicio market consume `StockShortage`.** La cola es SQS FIFO con `MessageGroupId = ingrediente`, así que hay una compra en curso por ingrediente y distintos ingredientes se compran en paralelo.
 - Llama a la plaza hasta acumular la cantidad pedida. La plaza decide cuánto vende en cada llamada (`quantitySold` puede ser menor o mayor).
@@ -276,7 +291,7 @@ si porComprar > 0 → inFlight += porComprar (escritura condicional) y se emite 
 - Registra cada compra en `purchases` (historial) y emite `IngredientPurchased(ingrediente, cantidad)`.
 
 **3. La bodega consume `IngredientPurchased`:**
-- Suma el stock con una operación atómica (`ADD`) y resta lo recibido de `inFlight`, en la **misma transacción** que registra `processed/<purchaseId>` con `attribute_not_exists`. `ADD` por sí solo no es idempotente: sin ese registro, un mensaje repetido sumaría la compra dos veces.
+- Suma el stock con una operación atómica (`ADD`) y resta lo recibido de `inFlight` sin bajar de 0 (si la plaza vendió de más, la diferencia es sobra), en la **misma transacción** que registra `processed/<purchaseId>` con `attribute_not_exists`. `ADD` por sí solo no es idempotente: sin ese registro, un mensaje repetido sumaría la compra dos veces.
 - Cada pedido que sale de la espera resta su necesidad de `waitingNeed`. Al terminar el recorrido se reevalúa la demanda agregada.
 - Recorre la lista de espera **del más antiguo al más nuevo** y reintenta el paso 1 para cada pedido, con la política **FIFO flexible**:
   - si el pedido más antiguo no alcanza, **no bloquea** a los demás: se salta y se intenta el siguiente;
@@ -305,6 +320,8 @@ si porComprar > 0 → inFlight += porComprar (escritura condicional) y se emite 
 - llega una compra → atiende la espera en orden FIFO;
 - el pedido más antiguo no alcanza y uno posterior sí → se reserva el posterior y el antiguo sigue en espera (FIFO flexible);
 - N pedidos esperando el mismo ingrediente → un solo faltante consolidado por la diferencia;
+- con un faltante en curso → los pedidos nuevos no emiten otro faltante del mismo ingrediente;
+- el proceso muere entre fijar `inFlight` y publicar → la siguiente evaluación republica el faltante pendiente;
 - llega una compra con sobras → no se emiten compras adicionales mientras el stock cubra la espera;
 - dos evaluaciones simultáneas de demanda → no duplican `inFlight`.
 
@@ -337,6 +354,7 @@ Cuando la condición falla por duplicado, el handler lo trata como **éxito** (e
 | kitchen | Asignar receta aleatoria | `orderId` | `assignments/<orderId>` con `attribute_not_exists`. **Crítico:** si se reprocesa, se reutiliza la receta ya guardada; no se vuelve a sortear otra |
 | warehouse | Reservar ingredientes | `orderId` | `reservations/<orderId>` en la misma transacción del descuento (§3.5) |
 | warehouse | Sumar compra al stock | `purchaseId` | `processed/<purchaseId>` en la misma transacción del `ADD` |
+| warehouse | Emitir faltante | `shortageId` | `shortages/<shortageId>` pendiente, en la misma escritura condicional que fija `inFlight`; se republica hasta marcarse como publicado (§3.5) |
 | market | Comprar en la plaza | `shortageId` | Ver limitación abajo |
 | realtime | Difundir al dashboard | `eventId` | No escribe estado de negocio; el frontend descarta eventos con `eventId` ya recibido |
 
