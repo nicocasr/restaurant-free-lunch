@@ -43,6 +43,15 @@ describe('pickRecipe', () => {
     }
   });
 
+  it('uses Math.random when no random source is given', () => {
+    const random = jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    expect(pickRecipe()).toBe(MENU[0]);
+    expect(random).toHaveBeenCalledTimes(1);
+
+    random.mockRestore();
+  });
+
   it.each([-0.1, 1, Number.NaN])('rejects a random source that returns %p', (value) => {
     expect(() => pickRecipe(() => value)).toThrow(RangeError);
   });
