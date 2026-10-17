@@ -1,6 +1,7 @@
 import type { DomainEvent, IngredientQuantity } from '@alegra-lunch/contracts';
 
 import type { Stock } from '../domain/stock';
+import type { WaitingOrder } from '../domain/waiting-list';
 
 /**
  * Result of a conditional write. 'duplicate' means the same message was already applied:
@@ -24,6 +25,12 @@ export interface WarehouseRepository {
    * An order is reserved at most once, even when its stock has run out since.
    */
   reserve(orderId: string, needs: readonly IngredientQuantity[]): Promise<ReserveOutcome>;
+
+  /**
+   * Adds the order to the waiting list and, in the same write, its need of every one of
+   * its ingredients to the aggregated demand (§3.5). An order is listed at most once.
+   */
+  enqueue(order: WaitingOrder): Promise<WriteOutcome>;
 }
 
 /** Publishes events to the other services. */

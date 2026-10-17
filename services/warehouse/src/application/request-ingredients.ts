@@ -11,13 +11,24 @@ export function requestIngredients(deps: {
     const { orderId, workdayId, ingredients } = event.payload;
     const context = { correlationId: event.correlationId };
 
-    const outcome = await deps.warehouse.reserve(orderId, ingredients);
-    // On a duplicate the event is published again: the first attempt may have died
+    // On a duplicate write the event is published again: the first attempt may have died
     // between the write and the publish (§3.6).
-    if (outcome.status === 'reserved' || outcome.status === 'duplicate') {
+    const outcome = await deps.warehouse.reserve(orderId, ingredients);
+    if (outcome.status !== 'insufficient') {
       await deps.publisher.publish(
         createEvent('IngredientsReserved', { orderId, workdayId }, context),
       );
+      return;
     }
+
+    // The event time keeps the order's place in line when the message is redelivered.
+    await deps.warehouse.enqueue({ orderId, waitingSince: event.occurredAt, needs: ingredients });
+    await deps.publisher.publish(
+      createEvent(
+        'OrderWaitingIngredients',
+        { orderId, workdayId, missing: outcome.missing },
+        context,
+      ),
+    );
   };
 }
