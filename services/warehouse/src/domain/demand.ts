@@ -2,7 +2,7 @@
 export interface Demand {
   /** Units the orders in the waiting list need, in total. */
   waitingNeed: number;
-  /** Units already requested from the market that have not arrived yet. */
+  /** Units of the active purchase that have not arrived yet. */
   inFlight: number;
 }
 
@@ -14,11 +14,15 @@ export interface DemandEvaluation {
 }
 
 /**
- * Buys per ingredient, not per order: only the difference between what the waiting
- * orders need and what is already in stock or on its way. Leftovers therefore never
- * trigger extra purchases.
+ * Buys per ingredient, not per order, with one active purchase per ingredient: while one
+ * is in flight nothing else is requested, and once it completes a single request covers
+ * everything that piled up. The market decides how much it sells, so separate small
+ * requests would each risk leftovers. Leftovers already in stock never trigger purchases.
  */
 export function evaluateDemand(demand: Demand, stock: number): DemandEvaluation {
-  const toPurchase = Math.max(0, demand.waitingNeed - stock - demand.inFlight);
-  return { toPurchase, demand: { ...demand, inFlight: demand.inFlight + toPurchase } };
+  if (demand.inFlight > 0) {
+    return { toPurchase: 0, demand };
+  }
+  const toPurchase = Math.max(0, demand.waitingNeed - stock);
+  return { toPurchase, demand: { ...demand, inFlight: toPurchase } };
 }
