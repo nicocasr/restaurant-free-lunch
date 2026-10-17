@@ -130,6 +130,53 @@ describe('requestIngredients', () => {
     });
   });
 
+  describe('when stock arrives between the failed reservation and joining the waiting list', () => {
+    // The purchase scanned the waiting list before this order was in it: without a retry,
+    // the order would wait forever even though the stock is there (lost wakeup).
+    function setupRace() {
+      const context = setup();
+      context.warehouse.beforeEnqueue = () => {
+        context.warehouse.stock = stockOf({ cheese: 5, onion: 5 });
+      };
+      return context;
+    }
+
+    it('reserves the order right away and takes it out of the waiting list', async () => {
+      const { warehouse, handle } = setupRace();
+
+      await handle(ingredientsRequested(changua));
+
+      expect(warehouse.stock).toEqual(stockOf({ cheese: 3, onion: 4 }));
+      expect(warehouse.waitingList).toEqual([]);
+      expect(warehouse.demand.onion.waitingNeed).toBe(0);
+      expect(warehouse.demand.cheese.waitingNeed).toBe(0);
+    });
+
+    it('tells the kitchen to cook and neither reports a wait nor buys anything', async () => {
+      const { publisher, handle } = setupRace();
+      const request = ingredientsRequested(changua);
+
+      await handle(request);
+
+      expect(publisher.events.map(({ type }) => type)).toEqual(['IngredientsReserved']);
+      expect(publisher.ofType('IngredientsReserved')[0]?.payload).toEqual({
+        orderId: request.payload.orderId,
+        workdayId: request.payload.workdayId,
+      });
+    });
+
+    it('does not deduct twice when the message is redelivered', async () => {
+      const { warehouse, publisher, handle } = setupRace();
+      const request = ingredientsRequested(changua);
+
+      await handle(request);
+      await handle(request);
+
+      expect(warehouse.stock).toEqual(stockOf({ cheese: 3, onion: 4 }));
+      expect(publisher.ofType('IngredientsReserved')).toHaveLength(2);
+    });
+  });
+
   describe('purchase requests to the market', () => {
     it('requests only the missing ingredients', async () => {
       const { warehouse, publisher, handle } = setup();

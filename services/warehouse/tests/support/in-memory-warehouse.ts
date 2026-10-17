@@ -2,6 +2,7 @@ import { INGREDIENTS, type Ingredient, type IngredientQuantity } from '@alegra-l
 
 import type {
   IngredientSnapshot,
+  ReserveFromWaitingOutcome,
   ReserveOutcome,
   Shortage,
   WarehouseRepository,
@@ -33,6 +34,8 @@ export class InMemoryWarehouse implements WarehouseRepository {
   private readonly reservations = new Set<string>();
   private readonly waiting = new Map<string, WaitingOrder>();
   private readonly shortages = new Map<string, Shortage & { published: boolean }>();
+  /** Lets a test run something right before an order is enqueued, to simulate a race. */
+  beforeEnqueue?: () => void;
 
   get waitingList(): WaitingOrder[] {
     return [...this.waiting.values()];
@@ -67,6 +70,7 @@ export class InMemoryWarehouse implements WarehouseRepository {
   }
 
   enqueue(order: WaitingOrder): Promise<WriteOutcome> {
+    this.beforeEnqueue?.();
     if (this.waiting.has(order.orderId)) {
       return Promise.resolve('duplicate');
     }
@@ -76,6 +80,24 @@ export class InMemoryWarehouse implements WarehouseRepository {
       this.touch(ingredient);
     }
     return Promise.resolve('applied');
+  }
+
+  reserveFromWaiting(order: WaitingOrder): Promise<ReserveFromWaitingOutcome> {
+    if (!this.waiting.has(order.orderId)) {
+      return Promise.resolve('not-waiting');
+    }
+    const result = reserve(this.stock, order.needs);
+    if (!result.reserved) {
+      return Promise.resolve('insufficient');
+    }
+    this.waiting.delete(order.orderId);
+    this.reservations.add(order.orderId);
+    this.stock = result.stock;
+    for (const { ingredient, quantity } of order.needs) {
+      this.demand[ingredient].waitingNeed -= quantity;
+      this.touch(ingredient);
+    }
+    return Promise.resolve('reserved');
   }
 
   readIngredient(ingredient: Ingredient): Promise<IngredientSnapshot> {
