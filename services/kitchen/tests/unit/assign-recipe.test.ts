@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
 import { createEvent } from '@alegra-lunch/contracts';
+import { InMemoryPublisher } from '@alegra-lunch/testing';
 
 import { assignRecipe } from '../../src/application/assign-recipe';
 import { InMemoryKitchen } from '../support/in-memory-kitchen';
-import { InMemoryPublisher } from '../support/in-memory-publisher';
 
 function orderPlaced() {
   return createEvent(

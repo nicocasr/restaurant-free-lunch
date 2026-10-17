@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import { createEvent, type Ingredient, type IngredientQuantity } from '@alegra-lunch/contracts';
+import { InMemoryPublisher } from '@alegra-lunch/testing';
 
 import { receivePurchase } from '../../src/application/receive-purchase';
-import { InMemoryPublisher } from '../support/in-memory-publisher';
 import { InMemoryWarehouse } from '../support/in-memory-warehouse';
 import { ajiaco, caldo, changua } from '../support/recipes';
 import { stockOf } from '../support/stock';

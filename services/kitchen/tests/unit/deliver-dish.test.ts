@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 
 import { createEvent } from '@alegra-lunch/contracts';
+import { InMemoryPublisher } from '@alegra-lunch/testing';
 
 import { deliverDish } from '../../src/application/deliver-dish';
 import { InMemoryKitchen } from '../support/in-memory-kitchen';
-import { InMemoryPublisher } from '../support/in-memory-publisher';
 
 function ingredientsReserved(orderId: string, workdayId: string) {
   return createEvent(
