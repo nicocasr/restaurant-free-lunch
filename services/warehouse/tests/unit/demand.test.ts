@@ -21,11 +21,11 @@ describe('evaluateDemand', () => {
     });
   });
 
-  it('subtracts what is already on its way from the market', () => {
-    expect(evaluateDemand({ waitingNeed: 5, inFlight: 3 }, 0)).toEqual({
-      toPurchase: 2,
-      demand: { waitingNeed: 5, inFlight: 5 },
-    });
+  it('requests nothing while a purchase of the ingredient is in flight, even if it falls short', () => {
+    // 200 orders wait while the first purchase of 1 onion is on its way:
+    // the rest is requested in one go once that purchase completes
+    const demand = { waitingNeed: 200, inFlight: 1 };
+    expect(evaluateDemand(demand, 0)).toEqual({ toPurchase: 0, demand });
   });
 
   it('buys nothing when the purchases in flight already cover the waiting orders', () => {
