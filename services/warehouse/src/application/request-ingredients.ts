@@ -1,6 +1,7 @@
 import { createEvent, type EventEnvelope } from '@alegra-lunch/contracts';
 
 import type { EventPublisher, WarehouseRepository } from './ports';
+import { requestPurchaseIfNeeded } from './request-purchase';
 
 /** Handles IngredientsRequested: reserves every ingredient of the recipe at once (§3.5). */
 export function requestIngredients(deps: {
@@ -30,5 +31,9 @@ export function requestIngredients(deps: {
         context,
       ),
     );
+
+    for (const { ingredient } of ingredients) {
+      await requestPurchaseIfNeeded(deps, ingredient, { workdayId, ...context });
+    }
   };
 }
