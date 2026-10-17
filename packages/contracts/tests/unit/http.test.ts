@@ -1,4 +1,4 @@
-import { CreateOrdersRequestSchema } from '../src';
+import { CreateOrdersRequestSchema } from '../../src';
 
 describe('CreateOrdersRequest', () => {
   it('accepts a positive whole number of dishes', () => {

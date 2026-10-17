@@ -1,4 +1,4 @@
-import { INGREDIENTS, IngredientSchema } from '../src';
+import { INGREDIENTS, IngredientSchema } from '../../src';
 
 describe('ingredients', () => {
   it('lists exactly the ten ingredients from the challenge statement', () => {

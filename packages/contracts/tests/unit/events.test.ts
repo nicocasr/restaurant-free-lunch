@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { EVENT_TYPES, InvalidEventError, createEvent, parseEvent } from '../src';
+import { EVENT_TYPES, InvalidEventError, createEvent, parseEvent } from '../../src';
 
 const correlationId = randomUUID();
 const workdayId = randomUUID();
