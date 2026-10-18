@@ -42,7 +42,7 @@ describe('placeOrders', () => {
       const batch = await handle({ idempotencyKey: randomUUID(), quantity: 3 });
 
       expect(publisher.ofType('OrderPlaced')).toEqual(
-        batch.orderIds.map((orderId) =>
+        batch.orderIds.map((orderId): unknown =>
           expect.objectContaining({ correlationId: orderId, payload: { orderId, workdayId } }),
         ),
       );
