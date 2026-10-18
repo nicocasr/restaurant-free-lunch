@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.11 — Aprobado (17/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.12 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -19,6 +19,7 @@ Estado: **v1.11 — Aprobado (17/10/2026)**. Los cambios posteriores se registra
 | 1.9 | 17/10/2026 | §3.1: el catálogo de recetas de kitchen vive en el código, no en su tabla |
 | 1.10 | 17/10/2026 | §3.5: el backoff de market usa **full jitter** (espera al azar entre 0 y el tiempo base) |
 | 1.11 | 17/10/2026 | §3.3: los reintentos de market los hace la cola (visibilidad del mensaje), con la DLQ sin `maxReceiveCount` y esperas en segundos enteros |
+| 1.12 | 18/10/2026 | §3.6: el lote guarda sus `orderId` y los pedidos se escriben "si no existe" (límite de 100 ítems por transacción); `correlationId` = `orderId` |
 
 ---
 
@@ -378,7 +379,7 @@ Cuando la condición falla por duplicado, el handler lo trata como **éxito** (e
 
 | Servicio | Operación | Llave de idempotencia | Escritura condicional |
 |----------|-----------|----------------------|----------------------|
-| orders | Crear lote (`POST /orders`) | Header `Idempotency-Key` generado por el frontend | `batches/<key>` con `attribute_not_exists`; un doble clic o un reintento HTTP no crea pedidos duplicados |
+| orders | Crear lote (`POST /orders`) | Header `Idempotency-Key` generado por el frontend | `batches/<key>` con `attribute_not_exists`, **con los `orderId` ya generados dentro del lote**; luego cada pedido se escribe "si no existe". Un doble clic o un reintento HTTP no crea pedidos duplicados (ver nota abajo) |
 | orders | Actualizar estado del pedido | `orderId` + estado | Solo avanza: `statusRank < nuevoRank`. Un evento repetido o desordenado no hace retroceder el estado |
 | kitchen | Asignar receta aleatoria | `orderId` | `assignments/<orderId>` con `attribute_not_exists`. **Crítico:** si se reprocesa, se reutiliza la receta ya guardada; no se vuelve a sortear otra |
 | warehouse | Reservar ingredientes | `orderId` | `reservations/<orderId>` en la misma transacción del descuento (§3.5) |
@@ -387,6 +388,12 @@ Cuando la condición falla por duplicado, el handler lo trata como **éxito** (e
 | warehouse | Emitir faltante | `shortageId` | `shortages/<shortageId>` pendiente, en la misma escritura condicional que fija `inFlight`; se republica hasta marcarse como publicado (§3.5) |
 | market | Comprar en la plaza | `shortageId` | Ver limitación abajo |
 | realtime | Difundir al dashboard | `eventId` | No escribe estado de negocio; el frontend descarta eventos con `eventId` ya recibido |
+
+**Lotes grandes en orders:** una transacción de DynamoDB admite como máximo 100 ítems, así que un lote de 1 000 platos no cabe en una sola.
+Por eso los `orderId` se generan **una sola vez** y se guardan dentro del ítem del lote (1 000 UUIDs ≈ 36 KB, bajo el límite de 400 KB por ítem).
+Los pedidos se escriben después con escrituras "si no existe": repetirlas es seguro porque los IDs ya están fijados.
+Si el proceso muere a mitad de camino, el reintento con la misma clave completa los pedidos que falten y republica los `OrderPlaced`.
+Cada `OrderPlaced` usa el `orderId` como `correlationId`, para seguir cada plato de punta a punta en los logs.
 
 **Limitación honesta — la plaza de mercado:** el endpoint externo **no es idempotente** y no podemos
 hacer una transacción que abarque nuestra BD y su API. Si la Lambda compra y muere antes de registrar la compra,
