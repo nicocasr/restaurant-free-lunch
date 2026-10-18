@@ -1,0 +1,24 @@
+name: alegra-lunch
+
+services:
+  localstack:
+    # 4.14.0 is the last community edition that starts without an auth token (PLANNING §2).
+    image: localstack/localstack:4.14.0
+    ports:
+      - '4566:4566'
+    environment:
+      SERVICES: dynamodb,sns,sqs
+      AWS_DEFAULT_REGION: us-east-1
+      # Keeps tables and queues across restarts, so the state survives like in AWS.
+      PERSISTENCE: '1'
+    volumes:
+      - ./infra/localstack/init/ready.d:/etc/localstack/init/ready.d:ro
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ['CMD', 'bash', '-c', 'test -f /tmp/alegra-lunch-ready']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  localstack-data:
