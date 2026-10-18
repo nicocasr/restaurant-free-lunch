@@ -124,4 +124,29 @@ describe('SnsEventPublisher', () => {
     expect(message?.Attributes?.['MessageDeduplicationId']).toBe(event.id);
     expect(await events.receive()).toEqual([]);
   });
+
+  it('publishes many events at once, still routing each one to its topic', async () => {
+    // More than one SNS batch (10 entries), with a shortage mixed in
+    const orders = Array.from({ length: 25 }, () =>
+      createEvent('OrderPlaced', { orderId: randomUUID(), workdayId: randomUUID() }, context),
+    );
+    const shortage = createEvent(
+      'StockShortage',
+      { shortageId: randomUUID(), workdayId: randomUUID(), ingredient: 'potato', quantity: 2 },
+      context,
+    );
+
+    await publisher.publishAll([...orders.slice(0, 12), shortage, ...orders.slice(12)]);
+
+    const received: string[] = [];
+    for (let poll = 0; poll < 10 && received.length < orders.length; poll++) {
+      for (const message of await events.receive()) {
+        received.push((JSON.parse(message.Body ?? '') as DomainEvent).id);
+      }
+    }
+    expect(received.sort()).toEqual(orders.map(({ id }) => id).sort());
+
+    const [message] = await shortages.receive();
+    expect(message?.Attributes?.['MessageGroupId']).toBe('potato');
+  });
 });

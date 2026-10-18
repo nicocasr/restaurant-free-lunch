@@ -48,6 +48,18 @@ describe('placeOrders', () => {
       );
     });
 
+    it('sends the dishes of a batch together, so a thousand of them fit in one request', async () => {
+      // One by one, 1 000 calls to SNS would outlast the 29 s limit of API Gateway
+      const { publisher, handle } = setup();
+
+      const batch = await handle({ idempotencyKey: randomUUID(), quantity: 1_000 });
+
+      expect(publisher.batches).toHaveLength(1);
+      expect(publisher.batches[0]?.map(({ correlationId }) => correlationId)).toEqual(
+        batch.orderIds,
+      );
+    });
+
     it('announces a workday left unannounced before sending any order of it', async () => {
       // The process that started the workday died before publishing WorkdayStarted
       const { orders, publisher, handle } = setup();
