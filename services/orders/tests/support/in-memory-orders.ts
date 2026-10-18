@@ -13,6 +13,14 @@ export class InMemoryOrders implements OrdersRepository {
     return [...this.orders.values()];
   }
 
+  /** Lets a test move an order forward, as the events of the other services would. */
+  setStatus(orderId: string, status: OrderRecord['status']): void {
+    const order = this.orders.get(orderId);
+    if (order) {
+      this.orders.set(orderId, { ...order, status });
+    }
+  }
+
   activeWorkday(): Promise<string | undefined> {
     return Promise.resolve(this.activeWorkdayId);
   }

@@ -88,4 +88,52 @@ describe('placeOrders', () => {
       expect(orders.allOrders).toEqual([]);
     });
   });
+
+  describe('a repeated Idempotency-Key (double click or HTTP retry)', () => {
+    it('returns the same batch and creates no new orders', async () => {
+      const { orders, handle } = setup();
+      const request = { idempotencyKey: randomUUID(), quantity: 3 };
+
+      const first = await handle(request);
+      const second = await handle(request);
+
+      expect(second).toEqual(first);
+      expect(orders.allOrders).toHaveLength(3);
+    });
+
+    it('sends the OrderPlaced events again, in case the first attempt died before sending them', async () => {
+      const { publisher, handle } = setup();
+      const request = { idempotencyKey: randomUUID(), quantity: 2 };
+
+      const batch = await handle(request);
+      await handle(request);
+
+      const sent = publisher.ofType('OrderPlaced').map(({ payload }) => payload.orderId);
+      expect(sent).toEqual([...batch.orderIds, ...batch.orderIds]);
+    });
+
+    it('never takes an order that moved on back to PLACED', async () => {
+      const { orders, handle } = setup();
+      const request = { idempotencyKey: randomUUID(), quantity: 2 };
+      const batch = await handle(request);
+      const [cooking] = batch.orderIds;
+      orders.setStatus(cooking as string, 'PREPARING');
+
+      await handle(request);
+
+      expect(orders.allOrders.find(({ orderId }) => orderId === cooking)?.status).toBe('PREPARING');
+    });
+
+    it('sends every dish of the batch when the first attempt died halfway through', async () => {
+      const { publisher, handle } = setup();
+      const request = { idempotencyKey: randomUUID(), quantity: 3 };
+      publisher.failNext('OrderPlaced');
+
+      await expect(handle(request)).rejects.toThrow('Simulated failure');
+      const batch = await handle(request);
+
+      const sent = new Set(publisher.ofType('OrderPlaced').map(({ payload }) => payload.orderId));
+      expect(sent).toEqual(new Set(batch.orderIds));
+    });
+  });
 });
