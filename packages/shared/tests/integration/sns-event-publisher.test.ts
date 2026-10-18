@@ -15,7 +15,7 @@ import {
   SQSClient,
 } from '@aws-sdk/client-sqs';
 
-import { SnsEventPublisher } from '../../src/sns-event-publisher';
+import { SnsEventPublisher } from '../../src/infrastructure/sns-event-publisher';
 
 const sns = new SNSClient({});
 const sqs = new SQSClient({});
