@@ -116,4 +116,50 @@ describe('purchaseIngredient', () => {
       ).toEqual([2, 1]);
     });
   });
+
+  describe('when the message comes back after a crash or a duplicate delivery', () => {
+    function quantities(publisher: InMemoryPublisher): number[] {
+      return publisher.ofType('IngredientPurchased').map(({ payload }) => payload.quantity);
+    }
+
+    it('does not call the market again for a shortage that is already covered', async () => {
+      // The script has a single answer: a second call would fail the test
+      const { market, handle } = setup([3]);
+      const shortage = stockShortage('onion', 3);
+
+      await handle(shortage);
+      const outcome = await handle(shortage);
+
+      expect(outcome).toEqual({ status: 'completed' });
+      expect(market.calls).toHaveLength(1);
+    });
+
+    it('publishes a sale recorded before the process died, without buying it again', async () => {
+      const { market, purchases, publisher, handle } = setup([2, 1]);
+      const shortage = stockShortage('onion', 3);
+      publisher.failNext('IngredientPurchased');
+
+      await expect(handle(shortage)).rejects.toThrow('Simulated failure');
+      expect(purchases.sales.map(({ quantity }) => quantity)).toEqual([2]);
+
+      const outcome = await handle(shortage);
+
+      expect(outcome).toEqual({ status: 'completed' });
+      expect(quantities(publisher)).toEqual([2, 1]);
+      expect(publisher.ofType('IngredientPurchased')[0]?.payload.purchaseId).toBe(
+        purchases.sales[0]?.purchaseId,
+      );
+      expect(market.calls).toHaveLength(2);
+    });
+
+    it('does not publish a sale twice once it was published', async () => {
+      const { publisher, handle } = setup([2, 0, 1]);
+      const shortage = stockShortage('onion', 3);
+
+      await handle(shortage);
+      await handle(shortage);
+
+      expect(quantities(publisher)).toEqual([2, 1]);
+    });
+  });
 });
