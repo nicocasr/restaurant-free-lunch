@@ -14,6 +14,7 @@ export class InMemoryPurchases implements PurchaseRepository {
   /** Purchase history: every sale of the farmers market, in order. */
   readonly sales: Sale[] = [];
   private readonly records = new Map<string, PurchaseRecord>();
+  private readonly unpublished = new Set<string>();
 
   recordOf(shortageId: string): PurchaseRecord | undefined {
     return this.records.get(shortageId);
@@ -32,6 +33,7 @@ export class InMemoryPurchases implements PurchaseRepository {
 
   recordSale(sale: Sale, progress: PurchaseProgress): Promise<void> {
     this.sales.push(sale);
+    this.unpublished.add(sale.purchaseId);
     return this.saveProgress(sale.shortageId, progress);
   }
 
@@ -40,6 +42,19 @@ export class InMemoryPurchases implements PurchaseRepository {
     if (record) {
       this.records.set(shortageId, { ...record, progress });
     }
+    return Promise.resolve();
+  }
+
+  pendingSales(shortageId: string): Promise<Sale[]> {
+    return Promise.resolve(
+      this.sales.filter(
+        (sale) => sale.shortageId === shortageId && this.unpublished.has(sale.purchaseId),
+      ),
+    );
+  }
+
+  markSalePublished(purchaseId: string): Promise<void> {
+    this.unpublished.delete(purchaseId);
     return Promise.resolve();
   }
 }

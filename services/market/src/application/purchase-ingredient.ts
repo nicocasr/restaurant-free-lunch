@@ -4,7 +4,7 @@ import { createEvent, type EventEnvelope } from '@alegra-lunch/contracts';
 
 import type { RandomSource } from '../domain/backoff';
 import { recordSale } from '../domain/purchase-progress';
-import type { EventPublisher, FarmersMarket, PurchaseRepository } from './ports';
+import type { EventPublisher, FarmersMarket, PurchaseRepository, Sale } from './ports';
 
 /** 'retry' asks the entrypoint to hide the message for that long (PLANNING §3.3). */
 export type PurchaseOutcome = { status: 'completed' } | { status: 'retry'; delaySeconds: number };
@@ -20,9 +20,26 @@ export function purchaseIngredient(deps: {
   random?: RandomSource;
 }) {
   return async (event: EventEnvelope<'StockShortage'>): Promise<PurchaseOutcome> => {
+    const publishSale = async (sale: Sale): Promise<void> => {
+      await deps.publisher.publish(
+        createEvent('IngredientPurchased', sale, { correlationId: event.correlationId }),
+      );
+      await deps.purchases.markSalePublished(sale.purchaseId);
+    };
+
+    // Resuming keeps what was already bought: the farmers market is not idempotent, so a
+    // retry only buys what is still missing (§3.6). Sales recorded by an attempt that died
+    // before publishing them go out first, so the warehouse never misses units.
     const record = await deps.purchases.startOrResume(event.payload);
     const { shortageId, workdayId, ingredient } = record;
+    for (const sale of await deps.purchases.pendingSales(shortageId)) {
+      await publishSale(sale);
+    }
+
     let { progress } = record;
+    if (progress.bought >= progress.requested) {
+      return { status: 'completed' };
+    }
 
     for (;;) {
       const quantitySold = await deps.market.buy(ingredient);
@@ -43,9 +60,7 @@ export function purchaseIngredient(deps: {
         quantity: quantitySold,
       };
       await deps.purchases.recordSale(sale, progress);
-      await deps.publisher.publish(
-        createEvent('IngredientPurchased', sale, { correlationId: event.correlationId }),
-      );
+      await publishSale(sale);
 
       if (result.next.action === 'complete') {
         return { status: 'completed' };

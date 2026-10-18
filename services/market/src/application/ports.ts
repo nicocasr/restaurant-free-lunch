@@ -27,11 +27,19 @@ export interface PurchaseRepository {
   /** Creates the purchase of the shortage, or returns it if it already exists. */
   startOrResume(shortage: Shortage): Promise<PurchaseRecord>;
 
-  /** Adds the sale to the purchase history and saves the progress, in the same write. */
+  /**
+   * Adds the sale to the purchase history, pending to publish, and saves the progress, in the
+   * same write.
+   */
   recordSale(sale: Sale, progress: PurchaseProgress): Promise<void>;
 
   /** Saves the progress after a call in which the market had nothing to sell. */
   saveProgress(shortageId: string, progress: PurchaseProgress): Promise<void>;
+
+  /** Sales of the shortage that were recorded but not yet published. */
+  pendingSales(shortageId: string): Promise<Sale[]>;
+
+  markSalePublished(purchaseId: string): Promise<void>;
 }
 
 /** Publishes events to the other services. */
