@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { Ingredient } from '@alegra-lunch/contracts';
+
 import type { PurchaseRepository, Sale } from '../../src/application/ports';
 
 /**
@@ -22,10 +24,10 @@ export function purchaseRepositoryContract(
       await dispose?.();
     });
 
-    const shortage = (quantity: number) => ({
+    const shortage = (quantity: number, ingredient: Ingredient = 'onion') => ({
       shortageId: randomUUID(),
       workdayId: randomUUID(),
-      ingredient: 'onion' as const,
+      ingredient,
       quantity,
     });
 
@@ -93,6 +95,33 @@ export function purchaseRepositoryContract(
       await repository.markSalePublished(first.purchaseId);
 
       expect(await repository.pendingSales(onion.shortageId)).toEqual([second]);
+    });
+
+    it('lists every sale of a workday for the purchase history, published or not', async () => {
+      const onion = shortage(5);
+      const potato = { ...shortage(5, 'potato'), workdayId: onion.workdayId };
+      const otherWorkday = shortage(5);
+      const sales = [saleOf(onion, 2), saleOf(potato, 3)];
+      for (const each of [onion, potato, otherWorkday]) {
+        await repository.startOrResume(each);
+      }
+      for (const sale of sales) {
+        await repository.recordSale(sale, {
+          requested: 5,
+          bought: sale.quantity,
+          failedAttempts: 0,
+        });
+      }
+      await repository.recordSale(saleOf(otherWorkday, 1), {
+        requested: 5,
+        bought: 1,
+        failedAttempts: 0,
+      });
+      await repository.markSalePublished(sales[0]?.purchaseId as string);
+
+      const history = await repository.listSales(onion.workdayId);
+
+      expect([...history].sort((a, b) => a.quantity - b.quantity)).toEqual(sales);
     });
   });
 }

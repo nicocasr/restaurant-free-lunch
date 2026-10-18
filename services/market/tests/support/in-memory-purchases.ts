@@ -53,6 +53,10 @@ export class InMemoryPurchases implements PurchaseRepository {
     );
   }
 
+  listSales(workdayId: string): Promise<Sale[]> {
+    return Promise.resolve(this.sales.filter((sale) => sale.workdayId === workdayId));
+  }
+
   markSalePublished(purchaseId: string): Promise<void> {
     this.unpublished.delete(purchaseId);
     return Promise.resolve();
