@@ -1,0 +1,23 @@
+{
+  "name": "@alegra-lunch/realtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pushes the changes of the order flow to the dashboard in batches over WebSocket",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "jest",
+    "test:integration": "jest -c jest.integration.config.cjs"
+  },
+  "dependencies": {
+    "@alegra-lunch/contracts": "0.1.0",
+    "@alegra-lunch/shared": "0.1.0",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@alegra-lunch/testing": "0.1.0",
+    "@types/ws": "^8.18.2"
+  }
+}
