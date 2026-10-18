@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.13 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.14 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -21,6 +21,7 @@ Estado: **v1.13 — Aprobado (18/10/2026)**. Los cambios posteriores se registra
 | 1.11 | 17/10/2026 | §3.3: los reintentos de market los hace la cola (visibilidad del mensaje), con la DLQ sin `maxReceiveCount` y esperas en segundos enteros |
 | 1.12 | 18/10/2026 | §3.6: el lote guarda sus `orderId` y los pedidos se escriben "si no existe" (límite de 100 ítems por transacción); `correlationId` = `orderId` |
 | 1.13 | 18/10/2026 | §3.7: la jornada nueva queda pendiente de publicar y se republica; dos clics simultáneos reciben la misma jornada; warehouse solo atiende pedidos de la jornada que ya inició |
+| 1.14 | 18/10/2026 | §2 y §9: LocalStack fijado en 4.14.0 (las versiones nuevas exigen cuenta). §3.2: segundo topic `shortages.fifo` para `StockShortage`, filtros por `type` y colas sin `maxReceiveCount` |
 
 ---
 
@@ -68,7 +69,7 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 | Monorepo | npm workspaces | Viene con Node, sin herramientas extra |
 | Testing | Jest (+ ts-jest) con TDD | Red → Green → Refactor en dominio y casos de uso |
 | IaC / despliegue | Serverless Framework **v4** | Mencionado explícitamente en el reto; versión con soporte activo |
-| Emulación local | LocalStack (SQS, SNS, DynamoDB) | Mismos adaptadores AWS en local y en la nube |
+| Emulación local | LocalStack **4.14.0** (SQS, SNS, DynamoDB), versión fijada | Mismos adaptadores AWS en local y en la nube. Desde la 2026.03.0 LocalStack exige cuenta y *auth token* incluso en su plan gratuito; la 4.14.0 (26/02/2026) es la última edición *community* que arranca sin token, así que los reviewers corren `docker compose up` sin registrarse. Riesgo aceptado: ya no recibe actualizaciones (ver §9) |
 | Tiempo real | WebSockets (API Gateway WebSocket) | El servidor empuja cada cambio al instante |
 | Frontend | React + Vite | — |
 | IA | Asistente operativo conversacional con **Gemini** (free tier) y function calling | Costo cero; responde con datos reales del sistema |
@@ -120,6 +121,20 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 **SNS (topic de eventos) → SQS (una cola por servicio consumidor) con DLQ**.
 Así cada servicio escala por separado y ninguno depende de que otro esté arriba: si un consumidor cae, sus mensajes esperan en su cola.
 Los errores transitorios se reintentan; la DLQ recibe solo los mensajes inválidos, para revisarlos.
+
+**Dos topics:** AWS no permite que una cola SQS **FIFO** se suscriba a un topic **estándar**, y la cola de market es FIFO (§3.3).
+
+| Topic | Tipo | Qué lleva | Quién lo consume |
+|-------|------|-----------|------------------|
+| `events` | Estándar | Todos los eventos excepto `StockShortage` | kitchen, warehouse, orders, realtime |
+| `shortages.fifo` | FIFO, `MessageGroupId = ingrediente` | Solo `StockShortage` | market (cola FIFO), realtime (cola estándar) |
+
+- El grueso del tráfico (miles de `OrderPlaced`) va por el topic estándar, sin el límite de throughput de los topics FIFO.
+- `StockShortage` es poco frecuente gracias al faltante consolidado (§3.5), así que nunca se acerca a ese límite.
+- Un topic FIFO sí puede entregar a colas estándar, por eso realtime recibe los faltantes sin cambiar su cola.
+- Solo el adaptador publicador de warehouse elige el topic según el tipo de evento; los casos de uso no cambian.
+- Cada suscripción filtra por el atributo `type`, así que cada cola recibe solo los eventos que su servicio consume.
+- Ninguna cola usa `maxReceiveCount`: un reintento legítimo (la plaza sin stock, una jornada que aún no llega) nunca termina en la DLQ. El *entrypoint* envía a la DLQ solo los mensajes que fallan la validación zod.
 
 #### Topología: quién produce y quién consume cada evento
 
@@ -627,4 +642,5 @@ alegra-lunch/
 |--------|------|
 | Límites del free tier de Gemini | Manejo de errores 429 y mensaje claro en el chat |
 | LocalStack no emula algo (p. ej. WebSocket API) | El servicio realtime tendrá en local un adaptador WebSocket con `ws` sobre `node:http` |
+| LocalStack 4.14.0 ya no recibe actualizaciones | Solo se usa en local: en AWS corren los servicios reales. Si dejara de estar disponible, los adaptadores no cambian; basta con otro emulador (por ejemplo DynamoDB Local + Moto) |
 | La plaza de mercado se cae o es lenta | Timeouts y reintentos indefinidos con tope de 10 s; los pedidos quedan en espera, no fallan |
