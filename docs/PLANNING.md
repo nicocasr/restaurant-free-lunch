@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.15 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.16 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -23,6 +23,7 @@ Estado: **v1.15 — Aprobado (18/10/2026)**. Los cambios posteriores se registra
 | 1.13 | 18/10/2026 | §3.7: la jornada nueva queda pendiente de publicar y se republica; dos clics simultáneos reciben la misma jornada; warehouse solo atiende pedidos de la jornada que ya inició |
 | 1.14 | 18/10/2026 | §2 y §9: LocalStack fijado en 4.14.0 (las versiones nuevas exigen cuenta). §3.2: segundo topic `shortages.fifo` para `StockShortage`, filtros por `type` y colas sin `maxReceiveCount` |
 | 1.15 | 18/10/2026 | §3.1: pedidos agrupados por jornada en 10 particiones y contador de pedidos en curso por jornada |
+| 1.16 | 18/10/2026 | §2: API de consulta en cada servicio dueño para el dashboard; realtime envía eventos y el inventario se vuelve a consultar |
 
 ---
 
@@ -89,6 +90,7 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 | Validación | zod (librería, no framework) | Valida en tiempo de ejecución los eventos, los requests HTTP y las variables de entorno (ver §3.8) |
 | Inicio de jornada | **Jornadas separadas**: el botón "Nueva jornada" solo se habilita sin pedidos en curso; reinicia la bodega a 5 unidades de cada ingrediente y el historial se conserva agrupado por jornada (ver §3.7) | La persistencia sobrevive reinicios del servidor; el "inicia con 5" aplica a la jornada, no al proceso. El historial por jornada permite comparar jornadas (útil para el asistente IA) |
 | Envío al dashboard | realtime **agrupa** los cambios y envía un paquete cada ~500 ms | Para el ojo humano sigue siendo tiempo real; evita saturar el navegador y la cuota de mensajes de API Gateway |
+| Datos del dashboard | Al abrirse, el dashboard **carga** los datos con una API de consulta **en cada servicio dueño**: `GET /orders` (orders), `GET /inventory` (warehouse), `GET /purchases` (market), `GET /recipes` (kitchen). Luego aplica los **eventos** que llegan por WebSocket: pedidos y compras se actualizan con el evento; el inventario se vuelve a consultar cuando llega un evento que lo cambia (como mucho una vez por paquete) | Respeta que cada servicio es dueño de sus datos (§3.1). Los eventos no llevan el stock completo, y meterlo en ellos acoplaría realtime con warehouse |
 | Tamaño del pedido | Límite máximo **configurable** (variable de entorno) y validado con zod | Protege el sistema de pedidos absurdos |
 | Plaza sin stock (`0`) | Reintentos **indefinidos** con *backoff* exponencial, tope de **10 s**; ningún pedido se pierde | La plaza eventualmente vende; el pedido espera, nunca falla |
 | Acceso | Sin login; **rate limiting** en la API y en el asistente | Facilita las pruebas de usuario y protege la operación y la cuota de Gemini |
