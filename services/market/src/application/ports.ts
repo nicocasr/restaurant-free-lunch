@@ -29,6 +29,9 @@ export interface PurchaseRepository {
 
   /** Adds the sale to the purchase history and saves the progress, in the same write. */
   recordSale(sale: Sale, progress: PurchaseProgress): Promise<void>;
+
+  /** Saves the progress after a call in which the market had nothing to sell. */
+  saveProgress(shortageId: string, progress: PurchaseProgress): Promise<void>;
 }
 
 /** Publishes events to the other services. */

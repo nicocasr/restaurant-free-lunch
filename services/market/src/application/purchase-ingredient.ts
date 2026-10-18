@@ -6,7 +6,8 @@ import type { RandomSource } from '../domain/backoff';
 import { recordSale } from '../domain/purchase-progress';
 import type { EventPublisher, FarmersMarket, PurchaseRepository } from './ports';
 
-export type PurchaseOutcome = { status: 'completed' };
+/** 'retry' asks the entrypoint to hide the message for that long (PLANNING §3.3). */
+export type PurchaseOutcome = { status: 'completed' } | { status: 'retry'; delaySeconds: number };
 
 /**
  * Handles StockShortage: buys the ingredient at the farmers market until the shortage is
@@ -28,6 +29,12 @@ export function purchaseIngredient(deps: {
       const result = recordSale(progress, quantitySold, deps.random);
       progress = result.progress;
 
+      if (result.next.action === 'wait') {
+        // The queue waits, not the process: SQS visibility is set in whole seconds.
+        await deps.purchases.saveProgress(shortageId, progress);
+        return { status: 'retry', delaySeconds: Math.ceil(result.next.delayMs / 1000) };
+      }
+
       const sale = {
         purchaseId: randomUUID(),
         shortageId,
@@ -40,7 +47,7 @@ export function purchaseIngredient(deps: {
         createEvent('IngredientPurchased', sale, { correlationId: event.correlationId }),
       );
 
-      if (result.next.action !== 'buy') {
+      if (result.next.action === 'complete') {
         return { status: 'completed' };
       }
     }
