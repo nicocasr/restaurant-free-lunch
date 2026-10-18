@@ -2,16 +2,16 @@ import { randomUUID } from 'node:crypto';
 
 import { InMemoryPublisher } from '@alegra-lunch/testing';
 
-import { placeOrders } from '../../src/application/place-orders';
+import { InvalidOrderRequestError, placeOrders } from '../../src/application/place-orders';
 import { InMemoryOrders } from '../support/in-memory-orders';
 
 const workdayId = randomUUID();
 
-function setup() {
+function setup(maxQuantity = 1_000) {
   const orders = new InMemoryOrders();
   orders.activeWorkdayId = workdayId;
   const publisher = new InMemoryPublisher();
-  return { orders, publisher, handle: placeOrders({ orders, publisher, maxQuantity: 1_000 }) };
+  return { orders, publisher, handle: placeOrders({ orders, publisher, maxQuantity }) };
 }
 
 describe('placeOrders', () => {
@@ -57,6 +57,35 @@ describe('placeOrders', () => {
       );
       expect(orders.allOrders).toEqual([]);
       expect(publisher.events).toEqual([]);
+    });
+  });
+
+  describe('the size of a batch', () => {
+    it('accepts a batch of exactly the configured maximum', async () => {
+      const { handle } = setup(5);
+
+      const batch = await handle({ idempotencyKey: randomUUID(), quantity: 5 });
+
+      expect(batch.orderIds).toHaveLength(5);
+    });
+
+    it('rejects a batch above the maximum and tells what the maximum is', async () => {
+      const { orders, publisher, handle } = setup(5);
+      const request = handle({ idempotencyKey: randomUUID(), quantity: 6 });
+
+      await expect(request).rejects.toThrow(InvalidOrderRequestError);
+      await expect(request).rejects.toThrow(/5/);
+      expect(orders.allOrders).toEqual([]);
+      expect(publisher.events).toEqual([]);
+    });
+
+    it.each([0, -1, 2.5])('rejects a quantity of %p', async (quantity) => {
+      const { orders, handle } = setup();
+
+      await expect(handle({ idempotencyKey: randomUUID(), quantity })).rejects.toThrow(
+        InvalidOrderRequestError,
+      );
+      expect(orders.allOrders).toEqual([]);
     });
   });
 });
