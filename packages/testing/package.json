@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
-    "@alegra-lunch/contracts": "0.1.0"
+    "@alegra-lunch/contracts": "0.1.0",
+    "@aws-sdk/client-dynamodb": "^3.1146.0"
   }
 }
