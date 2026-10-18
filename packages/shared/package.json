@@ -19,6 +19,7 @@
   "dependencies": {
     "@alegra-lunch/contracts": "0.1.0",
     "@aws-sdk/client-sns": "^3.1146.0",
-    "@aws-sdk/client-sqs": "^3.1146.0"
+    "@aws-sdk/client-sqs": "^3.1146.0",
+    "zod": "^4.6.7"
   }
 }
