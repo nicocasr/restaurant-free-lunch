@@ -3,17 +3,23 @@ import { randomUUID } from 'node:crypto';
 import { createEvent, type IngredientQuantity } from '@alegra-lunch/contracts';
 import { InMemoryPublisher } from '@alegra-lunch/testing';
 
-import { requestIngredients } from '../../src/application/request-ingredients';
+import {
+  WorkdayNotStartedError,
+  requestIngredients,
+} from '../../src/application/request-ingredients';
+import { initialStock } from '../../src/domain/stock';
 import { InMemoryWarehouse } from '../support/in-memory-warehouse';
 import { ajiaco, changua } from '../support/recipes';
 import { stockOf } from '../support/stock';
 
-function ingredientsRequested(ingredients: IngredientQuantity[]) {
+const workdayId = randomUUID();
+
+function ingredientsRequested(ingredients: IngredientQuantity[], orderWorkday = workdayId) {
   return createEvent(
     'IngredientsRequested',
     {
       orderId: randomUUID(),
-      workdayId: randomUUID(),
+      workdayId: orderWorkday,
       recipeId: 'changua',
       recipeName: 'Changua con queso',
       ingredients,
@@ -24,11 +30,42 @@ function ingredientsRequested(ingredients: IngredientQuantity[]) {
 
 function setup() {
   const warehouse = new InMemoryWarehouse();
+  warehouse.currentWorkdayId = workdayId;
   const publisher = new InMemoryPublisher();
   return { warehouse, publisher, handle: requestIngredients({ warehouse, publisher }) };
 }
 
 describe('requestIngredients', () => {
+  describe('when the order belongs to a workday the warehouse has not started yet', () => {
+    // WorkdayStarted travels in one hop and IngredientsRequested in two, but SQS does not
+    // guarantee the order: the request must wait for the reset to 5 units (PLANNING §3.7)
+    it('fails without touching the stock, so the message is retried later', async () => {
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 1, onion: 9 });
+
+      await expect(handle(ingredientsRequested(changua, randomUUID()))).rejects.toThrow(
+        WorkdayNotStartedError,
+      );
+
+      expect(warehouse.stock).toEqual(stockOf({ cheese: 1, onion: 9 }));
+      expect(warehouse.waitingList).toEqual([]);
+      expect(publisher.events).toEqual([]);
+    });
+
+    it('reserves against the fresh stock once the workday has started', async () => {
+      const { warehouse, publisher, handle } = setup();
+      const nextWorkday = randomUUID();
+      const request = ingredientsRequested(changua, nextWorkday);
+      await expect(handle(request)).rejects.toThrow(WorkdayNotStartedError);
+
+      await warehouse.startWorkday(nextWorkday, initialStock());
+      await handle(request);
+
+      expect(publisher.ofType('IngredientsReserved')).toHaveLength(1);
+      expect(warehouse.stock).toEqual({ ...initialStock(), cheese: 3, onion: 4 });
+    });
+  });
+
   describe('when there is enough stock', () => {
     it('deducts the ingredients of the recipe', async () => {
       const { warehouse, handle } = setup();
