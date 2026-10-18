@@ -1,6 +1,7 @@
 import type {
   Batch,
   OrderRecord,
+  OrderKey,
   OrdersRepository,
   OrderUpdate,
 } from '../../src/application/ports';
@@ -28,11 +29,15 @@ export class InMemoryOrders implements OrdersRepository {
     }
   }
 
+  listOrders(workdayId: string): Promise<OrderRecord[]> {
+    return Promise.resolve(this.allOrders.filter((order) => order.workdayId === workdayId));
+  }
+
   activeWorkday(): Promise<string | undefined> {
     return Promise.resolve(this.activeWorkdayId);
   }
 
-  updateOrder(orderId: string, { status, recipe, waiting }: OrderUpdate): Promise<void> {
+  updateOrder({ orderId }: OrderKey, { status, recipe, waiting }: OrderUpdate): Promise<void> {
     const order = this.orders.get(orderId);
     if (order) {
       const moved = advance(order.status, status) !== order.status;

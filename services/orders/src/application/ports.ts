@@ -16,6 +16,9 @@ export interface OrderRecord {
   waitingSince?: string;
 }
 
+/** What locates an order: its id and the workday it belongs to. */
+export type OrderKey = Pick<OrderRecord, 'orderId' | 'workdayId'>;
+
 /** A change to an order, coming from one event of the other services. */
 export interface OrderUpdate {
   status: OrderStatus;
@@ -62,7 +65,10 @@ export interface OrdersRepository {
    * only moves forward (PLANNING §3.6), and the waiting details are kept only when the order
    * actually moves to WAITING_INGREDIENTS.
    */
-  updateOrder(orderId: string, update: OrderUpdate): Promise<void>;
+  updateOrder(order: OrderKey, update: OrderUpdate): Promise<void>;
+
+  /** The order history of a workday, for the dashboard. */
+  listOrders(workdayId: string): Promise<OrderRecord[]>;
 }
 
 /** Publishes events to the other services. */
