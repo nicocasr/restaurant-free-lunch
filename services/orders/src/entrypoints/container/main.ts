@@ -1,13 +1,11 @@
-import { createServer } from 'node:http';
-
 import {
   createConsumer,
   createEventPublisher,
   createLogger,
-  createRouter,
+  httpConfig,
   loadConfig,
   messagingConfig,
-  nodeListener,
+  serveHttp,
   shutdownSignal,
 } from '@alegra-lunch/shared';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -21,10 +19,9 @@ import { createRoutes, statusFor } from '../http/routes';
 
 const config = loadConfig({
   ...messagingConfig,
+  ...httpConfig,
   TABLE_NAME: z.string().min(1),
-  PORT: z.coerce.number().int().positive().default(3000),
   MAX_ORDER_QUANTITY: z.coerce.number().int().positive().default(1_000),
-  CORS_ORIGIN: z.string().min(1).default('*'),
 });
 const logger = createLogger({ service: 'orders' });
 
@@ -33,26 +30,22 @@ const orders = new DynamoOrders({
   tableName: config.TABLE_NAME,
 });
 const publisher = createEventPublisher(config);
-const signal = shutdownSignal(logger);
-
-const router = createRouter({
-  routes: createRoutes({ orders, publisher, maxQuantity: config.MAX_ORDER_QUANTITY }),
-  statusFor,
-  corsOrigin: config.CORS_ORIGIN,
-  logger,
-});
-const server = createServer(nodeListener(router, { maxBodyBytes: 16 * 1024 }));
-signal.addEventListener('abort', () => server.close());
-
 const track = trackOrder({ orders });
 
 async function main(): Promise<void> {
+  const signal = shutdownSignal(logger);
+
   // The first start creates the first workday, so the warehouse begins with 5 of each (§3.7).
   const { workdayId } = await seedFirstWorkday({ orders, publisher })();
   logger.info('Active workday', { workdayId });
 
-  server.listen(config.PORT, () => {
-    logger.info('Orders API is listening', { port: config.PORT });
+  await serveHttp({
+    routes: createRoutes({ orders, publisher, maxQuantity: config.MAX_ORDER_QUANTITY }),
+    statusFor,
+    port: config.PORT,
+    corsOrigin: config.CORS_ORIGIN,
+    logger,
+    signal,
   });
   await createConsumer(
     config,

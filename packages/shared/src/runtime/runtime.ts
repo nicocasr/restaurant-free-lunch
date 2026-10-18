@@ -1,8 +1,12 @@
+import { createServer, type Server } from 'node:http';
+
 import { SNSClient } from '@aws-sdk/client-sns';
 import { SQSClient } from '@aws-sdk/client-sqs';
 
 import { SnsEventPublisher } from '../infrastructure/sns-event-publisher';
 import { SqsConsumer, type MessageHandler } from '../infrastructure/sqs-consumer';
+import { nodeListener } from '../http/node-listener';
+import { createRouter, type Route } from '../http/router';
 import type { Logger } from '../logging/logger';
 
 /**
@@ -44,4 +48,27 @@ export function createConsumer(
     handle,
     logger,
   });
+}
+
+/** Serves the routes of a service with node:http until it shuts down (PLANNING §3.4). */
+export async function serveHttp(options: {
+  routes: readonly Route[];
+  port: number;
+  corsOrigin: string;
+  logger: Logger;
+  signal: AbortSignal;
+  statusFor?: (error: Error) => number | undefined;
+}): Promise<Server> {
+  const router = createRouter({
+    routes: options.routes,
+    corsOrigin: options.corsOrigin,
+    logger: options.logger,
+    ...(options.statusFor && { statusFor: options.statusFor }),
+  });
+  // 16 KB is plenty for the manager's requests and refuses abusive bodies early.
+  const server = createServer(nodeListener(router, { maxBodyBytes: 16 * 1024 }));
+  options.signal.addEventListener('abort', () => server.close());
+  await new Promise<void>((resolve) => server.listen(options.port, resolve));
+  options.logger.info('HTTP API is listening', { port: options.port });
+  return server;
 }

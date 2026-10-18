@@ -52,29 +52,38 @@ services:
   kitchen:
     <<: *service
     build: { context: ., dockerfile: services/kitchen/Dockerfile }
+    ports:
+      - '3002:3002'
     environment:
       <<: *aws
       TABLE_NAME: kitchen
       QUEUE_URL: http://localstack:4566/000000000000/kitchen
       DLQ_URL: http://localstack:4566/000000000000/kitchen-dlq
+      PORT: '3002'
 
   warehouse:
     <<: *service
     build: { context: ., dockerfile: services/warehouse/Dockerfile }
+    ports:
+      - '3001:3001'
     environment:
       <<: *aws
       TABLE_NAME: warehouse
       QUEUE_URL: http://localstack:4566/000000000000/warehouse
       DLQ_URL: http://localstack:4566/000000000000/warehouse-dlq
+      PORT: '3001'
 
   market:
     <<: *service
     build: { context: ., dockerfile: services/market/Dockerfile }
+    ports:
+      - '3003:3003'
     environment:
       <<: *aws
       TABLE_NAME: purchases
       QUEUE_URL: http://localstack:4566/000000000000/market.fifo
       DLQ_URL: http://localstack:4566/000000000000/market-dlq.fifo
+      PORT: '3003'
       FARMERS_MARKET_URL: https://recruitment.alegra.com/api/farmers-market
 
 volumes:

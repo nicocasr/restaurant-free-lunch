@@ -3,8 +3,10 @@ import {
   createConsumer,
   createEventPublisher,
   createLogger,
+  httpConfig,
   loadConfig,
   messagingConfig,
+  serveHttp,
   shutdownSignal,
 } from '@alegra-lunch/shared';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -15,8 +17,9 @@ import { receivePurchase } from '../../application/receive-purchase';
 import { requestIngredients } from '../../application/request-ingredients';
 import { startWorkday } from '../../application/start-workday';
 import { DynamoWarehouse } from '../../infrastructure/dynamo-warehouse';
+import { createRoutes } from '../http/routes';
 
-const config = loadConfig({ ...messagingConfig, TABLE_NAME: z.string().min(1) });
+const config = loadConfig({ ...messagingConfig, ...httpConfig, TABLE_NAME: z.string().min(1) });
 const logger = createLogger({ service: 'warehouse' });
 
 const warehouse = new DynamoWarehouse({
@@ -47,5 +50,13 @@ async function handle(event: DomainEvent): Promise<undefined> {
   return undefined;
 }
 
+const signal = shutdownSignal(logger);
+void serveHttp({
+  routes: createRoutes({ warehouse }),
+  port: config.PORT,
+  corsOrigin: config.CORS_ORIGIN,
+  logger,
+  signal,
+});
 logger.info('Warehouse is consuming its queue');
-void createConsumer(config, handle, logger).run(shutdownSignal(logger));
+void createConsumer(config, handle, logger).run(signal);

@@ -40,6 +40,9 @@ export interface PurchaseRepository {
   pendingSales(shortageId: string): Promise<Sale[]>;
 
   markSalePublished(purchaseId: string): Promise<void>;
+
+  /** Every sale of a workday: the purchase history of the dashboard. */
+  listSales(workdayId: string): Promise<Sale[]>;
 }
 
 /** Publishes events to the other services. */

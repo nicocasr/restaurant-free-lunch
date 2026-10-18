@@ -3,8 +3,10 @@ import {
   createConsumer,
   createEventPublisher,
   createLogger,
+  httpConfig,
   loadConfig,
   messagingConfig,
+  serveHttp,
   shutdownSignal,
 } from '@alegra-lunch/shared';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -14,8 +16,9 @@ import { z } from 'zod';
 import { assignRecipe } from '../../application/assign-recipe';
 import { deliverDish } from '../../application/deliver-dish';
 import { DynamoKitchen } from '../../infrastructure/dynamo-kitchen';
+import { createRoutes } from '../http/routes';
 
-const config = loadConfig({ ...messagingConfig, TABLE_NAME: z.string().min(1) });
+const config = loadConfig({ ...messagingConfig, ...httpConfig, TABLE_NAME: z.string().min(1) });
 const logger = createLogger({ service: 'kitchen' });
 
 const kitchen = new DynamoKitchen({
@@ -42,5 +45,13 @@ async function handle(event: DomainEvent): Promise<undefined> {
   return undefined;
 }
 
+const signal = shutdownSignal(logger);
+void serveHttp({
+  routes: createRoutes(),
+  port: config.PORT,
+  corsOrigin: config.CORS_ORIGIN,
+  logger,
+  signal,
+});
 logger.info('Kitchen is consuming its queue');
-void createConsumer(config, handle, logger).run(shutdownSignal(logger));
+void createConsumer(config, handle, logger).run(signal);

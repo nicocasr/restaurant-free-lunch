@@ -8,6 +8,13 @@ export const messagingConfig = {
   SHORTAGES_TOPIC_ARN: z.string().startsWith('arn:aws:sns:').endsWith('.fifo'),
 };
 
+/** Variables of the HTTP API every service serves (PLANNING §2). */
+export const httpConfig = {
+  PORT: z.coerce.number().int().positive(),
+  // The dashboard origin; '*' is fine locally, AWS sets the CloudFront domain.
+  CORS_ORIGIN: z.string().min(1).default('*'),
+};
+
 /** A variable is missing or invalid: the service refuses to start (PLANNING §3.8). */
 export class ConfigError extends Error {
   constructor(error: z.ZodError) {
