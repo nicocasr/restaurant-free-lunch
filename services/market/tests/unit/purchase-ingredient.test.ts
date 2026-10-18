@@ -64,4 +64,56 @@ describe('purchaseIngredient', () => {
       expect(purchases.sales.map(({ quantity }) => quantity)).toEqual([1, 4]);
     });
   });
+
+  describe('when the market has nothing to sell', () => {
+    it('asks to retry later, in whole seconds, without recording or publishing a sale', async () => {
+      // random 0.5 on attempt 1: half of the 1 s base = 500 ms, rounded up to 1 s
+      const { purchases, publisher, handle } = setup([0]);
+
+      const outcome = await handle(stockShortage('onion', 3));
+
+      expect(outcome).toEqual({ status: 'retry', delaySeconds: 1 });
+      expect(purchases.sales).toEqual([]);
+      expect(publisher.events).toEqual([]);
+    });
+
+    it('waits longer on each retry, because the failed attempts are saved', async () => {
+      const { handle } = setup([0, 0, 0]);
+      const shortage = stockShortage('onion', 3);
+
+      const delays = [];
+      for (let i = 0; i < 3; i++) {
+        const outcome = await handle(shortage);
+        delays.push(outcome.status === 'retry' ? outcome.delaySeconds : undefined);
+      }
+
+      // half of 1 s, 2 s and 4 s, rounded up
+      expect(delays).toEqual([1, 1, 2]);
+    });
+
+    it('publishes what was bought before the market ran out, and retries for the rest', async () => {
+      const { publisher, handle } = setup([2, 0]);
+
+      const outcome = await handle(stockShortage('onion', 3));
+
+      expect(outcome).toEqual({ status: 'retry', delaySeconds: 1 });
+      expect(
+        publisher.ofType('IngredientPurchased').map(({ payload }) => payload.quantity),
+      ).toEqual([2]);
+    });
+
+    it('buys only what is still missing when the message comes back', async () => {
+      const { market, publisher, handle } = setup([2, 0, 1]);
+      const shortage = stockShortage('onion', 3);
+
+      await handle(shortage);
+      const outcome = await handle(shortage);
+
+      expect(outcome).toEqual({ status: 'completed' });
+      expect(market.calls).toHaveLength(3);
+      expect(
+        publisher.ofType('IngredientPurchased').map(({ payload }) => payload.quantity),
+      ).toEqual([2, 1]);
+    });
+  });
 });
