@@ -61,16 +61,17 @@ export function placeOrders(deps: {
       })),
     );
 
-    // Each dish is traced end to end by its own order id.
-    for (const orderId of batch.orderIds) {
-      await deps.publisher.publish(
+    // Each dish is traced end to end by its own order id. They go out together: one by one,
+    // a thousand dishes would outlast the time limit of the HTTP request.
+    await deps.publisher.publishAll(
+      batch.orderIds.map((orderId) =>
         createEvent(
           'OrderPlaced',
           { orderId, workdayId: batch.workdayId },
           { correlationId: orderId },
         ),
-      );
-    }
+      ),
+    );
     return batch;
   };
 }

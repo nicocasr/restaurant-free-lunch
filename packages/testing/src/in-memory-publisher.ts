@@ -6,7 +6,16 @@ import type { DomainEvent, EventType } from '@alegra-lunch/contracts';
  */
 export class InMemoryPublisher {
   readonly events: DomainEvent[] = [];
+  /** Every call to publishAll, to check what was sent together. */
+  readonly batches: DomainEvent[][] = [];
   private readonly failures = new Set<EventType>();
+
+  async publishAll(events: readonly DomainEvent[]): Promise<void> {
+    this.batches.push([...events]);
+    for (const event of events) {
+      await this.publish(event);
+    }
+  }
 
   publish(event: DomainEvent): Promise<void> {
     if (this.failures.delete(event.type)) {

@@ -74,4 +74,7 @@ export interface OrdersRepository {
 /** Publishes events to the other services. */
 export interface EventPublisher {
   publish(event: DomainEvent): Promise<void>;
+
+  /** Publishes many events in few round trips; a batch of dishes must fit in one request. */
+  publishAll(events: readonly DomainEvent[]): Promise<void>;
 }
