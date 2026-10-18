@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { CreateOrdersRequestSchema, createEvent } from '@alegra-lunch/contracts';
 
+import { announcePendingWorkdays } from './announce-workdays';
 import type { Batch, EventPublisher, OrdersRepository } from './ports';
 
 export interface PlaceOrdersRequest {
@@ -36,6 +37,9 @@ export function placeOrders(deps: {
         `The quantity must be a whole number from 1 to ${String(deps.maxQuantity)}`,
       );
     }
+
+    // The warehouse must get its WorkdayStarted before any order of that workday (§3.7).
+    await announcePendingWorkdays(deps);
 
     const workdayId = await deps.orders.activeWorkday();
     if (!workdayId) {
