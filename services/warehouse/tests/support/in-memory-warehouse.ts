@@ -48,6 +48,10 @@ export class InMemoryWarehouse implements WarehouseRepository {
     return [...this.waiting.values()];
   }
 
+  activeWorkday(): Promise<string | undefined> {
+    return Promise.resolve(this.currentWorkdayId);
+  }
+
   startWorkday(workdayId: string, stock: Stock): Promise<WriteOutcome> {
     if (this.startedWorkdays.has(workdayId)) {
       return Promise.resolve('duplicate');

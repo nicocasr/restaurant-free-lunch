@@ -48,6 +48,9 @@ export type Shortage = EventPayload<'StockShortage'>;
 
 /** Persistence port of the warehouse. Every method is atomic. */
 export interface WarehouseRepository {
+  /** The workday the warehouse last started, if any. */
+  activeWorkday(): Promise<string | undefined>;
+
   /**
    * Makes the workday the active one: replaces the whole stock, resets the demand and drops
    * the shortages not yet published. At most once per workday (§3.7).

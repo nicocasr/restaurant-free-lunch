@@ -4,6 +4,14 @@ import type { EventPublisher, WarehouseRepository } from './ports';
 import { publishPendingReservations } from './publish-reservations';
 import { requestPurchaseIfNeeded } from './request-purchase';
 
+/** The order belongs to a workday the warehouse has not started yet: the message is retried. */
+export class WorkdayNotStartedError extends Error {
+  constructor(workdayId: string) {
+    super(`Workday ${workdayId} has not started in the warehouse yet`);
+    this.name = 'WorkdayNotStartedError';
+  }
+}
+
 /** Handles IngredientsRequested: reserves every ingredient of the recipe at once (§3.5). */
 export function requestIngredients(deps: {
   warehouse: WarehouseRepository;
@@ -12,6 +20,13 @@ export function requestIngredients(deps: {
   return async (event: EventEnvelope<'IngredientsRequested'>): Promise<void> => {
     const { orderId, workdayId, ingredients } = event.payload;
     const context = { correlationId: event.correlationId };
+
+    // WorkdayStarted may arrive after the first orders of its workday, since SQS does not
+    // guarantee the order (§3.7). A plain read is enough: the workday only changes when no
+    // order is in progress, and this one is.
+    if ((await deps.warehouse.activeWorkday()) !== workdayId) {
+      throw new WorkdayNotStartedError(workdayId);
+    }
 
     // On a duplicate write the event is published again: the first attempt may have died
     // between the write and the publish (§3.6).
