@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.14 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.15 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -22,6 +22,7 @@ Estado: **v1.14 — Aprobado (18/10/2026)**. Los cambios posteriores se registra
 | 1.12 | 18/10/2026 | §3.6: el lote guarda sus `orderId` y los pedidos se escriben "si no existe" (límite de 100 ítems por transacción); `correlationId` = `orderId` |
 | 1.13 | 18/10/2026 | §3.7: la jornada nueva queda pendiente de publicar y se republica; dos clics simultáneos reciben la misma jornada; warehouse solo atiende pedidos de la jornada que ya inició |
 | 1.14 | 18/10/2026 | §2 y §9: LocalStack fijado en 4.14.0 (las versiones nuevas exigen cuenta). §3.2: segundo topic `shortages.fifo` para `StockShortage`, filtros por `type` y colas sin `maxReceiveCount` |
+| 1.15 | 18/10/2026 | §3.1: pedidos agrupados por jornada en 10 particiones y contador de pedidos en curso por jornada |
 
 ---
 
@@ -104,7 +105,7 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 
 | Servicio | Responsabilidad | Persistencia |
 |----------|-----------------|--------------|
-| **orders** | API del gerente: crea lotes de pedidos, historial y estado de cada pedido (read model) | Tabla `orders` (pedidos y lotes `batches/<key>`) |
+| **orders** | API del gerente: crea lotes de pedidos, historial y estado de cada pedido (read model) | Tabla `orders` (lotes `batches/<key>` y pedidos). Los pedidos se agrupan **por jornada en 10 particiones** (`WORKDAY#<id>#ORDERS#<0..9>`): el historial de una jornada sale con 10 consultas directas, sin *scan* ni índices con retraso, y ninguna partición se satura. Un **contador por jornada** (+1 al crear, −1 al entregar, en la misma transacción) responde el `409` de "Nueva jornada" con una sola lectura consistente |
 | **kitchen** | Elige la receta al azar, solicita ingredientes, prepara y entrega | Tabla `kitchen` (`assignments/<orderId>`). El catálogo de recetas vive en el código (`MENU`): es fijo, queda versionado en Git y se prueba sin base de datos |
 | **warehouse** | Inventario y reserva **atómica** de ingredientes; lista de espera FIFO flexible | Tabla `warehouse` (`inventory`, `reservations`, `waiting`, `processed`) |
 | **market** | Compra en la plaza con reintentos y *backoff*; historial de compras | Tabla `purchases` |
