@@ -39,6 +39,15 @@ describe('startWorkday', () => {
     expect(announced(publisher)).toEqual([workdayId]);
   });
 
+  it('starts the first workday when none is active yet', async () => {
+    const { orders, publisher, handle } = setup();
+
+    const { workdayId } = await handle();
+
+    expect(orders.activeWorkdayId).toBe(workdayId);
+    expect(announced(publisher)).toEqual([workdayId]);
+  });
+
   it('refuses while orders are in progress and tells how many are left', async () => {
     const { orders, publisher, handle } = setup();
     const current = randomUUID();
