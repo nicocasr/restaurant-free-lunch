@@ -1,5 +1,21 @@
 name: alegra-lunch
 
+# Settings every service shares: LocalStack as AWS, and the two topics (PLANNING §3.2).
+x-service: &service
+  restart: unless-stopped
+  depends_on:
+    localstack:
+      condition: service_healthy
+
+x-aws: &aws
+  AWS_ENDPOINT_URL: http://localstack:4566
+  AWS_REGION: us-east-1
+  # LocalStack accepts any credentials; these are not secrets.
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  EVENTS_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:events
+  SHORTAGES_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:shortages.fifo
+
 services:
   localstack:
     # 4.14.0 is the last community edition that starts without an auth token (PLANNING §2).
@@ -19,6 +35,47 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+
+  orders:
+    <<: *service
+    build: { context: ., dockerfile: services/orders/Dockerfile }
+    ports:
+      - '3000:3000'
+    environment:
+      <<: *aws
+      TABLE_NAME: orders
+      QUEUE_URL: http://localstack:4566/000000000000/orders
+      DLQ_URL: http://localstack:4566/000000000000/orders-dlq
+      PORT: '3000'
+      MAX_ORDER_QUANTITY: '1000'
+
+  kitchen:
+    <<: *service
+    build: { context: ., dockerfile: services/kitchen/Dockerfile }
+    environment:
+      <<: *aws
+      TABLE_NAME: kitchen
+      QUEUE_URL: http://localstack:4566/000000000000/kitchen
+      DLQ_URL: http://localstack:4566/000000000000/kitchen-dlq
+
+  warehouse:
+    <<: *service
+    build: { context: ., dockerfile: services/warehouse/Dockerfile }
+    environment:
+      <<: *aws
+      TABLE_NAME: warehouse
+      QUEUE_URL: http://localstack:4566/000000000000/warehouse
+      DLQ_URL: http://localstack:4566/000000000000/warehouse-dlq
+
+  market:
+    <<: *service
+    build: { context: ., dockerfile: services/market/Dockerfile }
+    environment:
+      <<: *aws
+      TABLE_NAME: purchases
+      QUEUE_URL: http://localstack:4566/000000000000/market.fifo
+      DLQ_URL: http://localstack:4566/000000000000/market-dlq.fifo
+      FARMERS_MARKET_URL: https://recruitment.alegra.com/api/farmers-market
 
 volumes:
   localstack-data:

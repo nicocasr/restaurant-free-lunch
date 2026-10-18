@@ -1,0 +1,7 @@
+# Built inside the image; copying them would break the cache and leak local state
+**/node_modules
+**/dist
+**/coverage
+.git
+.github
+docs
