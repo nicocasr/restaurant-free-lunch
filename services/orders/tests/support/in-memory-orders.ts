@@ -1,5 +1,10 @@
-import type { Batch, OrderRecord, OrdersRepository } from '../../src/application/ports';
-import { isInProgress } from '../../src/domain/order-status';
+import type {
+  Batch,
+  OrderRecord,
+  OrdersRepository,
+  OrderUpdate,
+} from '../../src/application/ports';
+import { advance, isInProgress } from '../../src/domain/order-status';
 
 /**
  * In-memory adapter for the orders port. Node runs it on a single thread, so every method is
@@ -25,6 +30,20 @@ export class InMemoryOrders implements OrdersRepository {
 
   activeWorkday(): Promise<string | undefined> {
     return Promise.resolve(this.activeWorkdayId);
+  }
+
+  updateOrder(orderId: string, { status, recipe, waiting }: OrderUpdate): Promise<void> {
+    const order = this.orders.get(orderId);
+    if (order) {
+      const moved = advance(order.status, status) !== order.status;
+      this.orders.set(orderId, {
+        ...order,
+        ...recipe,
+        ...(moved && { status }),
+        ...(moved && waiting && { missing: waiting.missing, waitingSince: waiting.since }),
+      });
+    }
+    return Promise.resolve();
   }
 
   countInProgress(workdayId: string): Promise<number> {

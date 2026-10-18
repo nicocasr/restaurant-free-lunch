@@ -1,4 +1,4 @@
-import type { DomainEvent } from '@alegra-lunch/contracts';
+import type { DomainEvent, IngredientQuantity } from '@alegra-lunch/contracts';
 
 import type { OrderStatus } from '../domain/order-status';
 
@@ -8,6 +8,19 @@ export interface OrderRecord {
   batchId: string;
   workdayId: string;
   status: OrderStatus;
+  recipeId?: string;
+  recipeName?: string;
+  /** What the order lacked when it joined the warehouse waiting list. */
+  missing?: IngredientQuantity[];
+  /** ISO timestamp of when the order started waiting for ingredients. */
+  waitingSince?: string;
+}
+
+/** A change to an order, coming from one event of the other services. */
+export interface OrderUpdate {
+  status: OrderStatus;
+  recipe?: { recipeId: string; recipeName: string };
+  waiting?: { missing: IngredientQuantity[]; since: string };
 }
 
 /** A click of the manager: its Idempotency-Key and the ids of the orders it created. */
@@ -43,6 +56,13 @@ export interface OrdersRepository {
 
   /** Writes each order only if it does not exist yet, so a status that moved on is kept. */
   saveNewOrders(orders: readonly OrderRecord[]): Promise<void>;
+
+  /**
+   * The recipe is kept whenever it arrives, since events may come in any order. The status
+   * only moves forward (PLANNING §3.6), and the waiting details are kept only when the order
+   * actually moves to WAITING_INGREDIENTS.
+   */
+  updateOrder(orderId: string, update: OrderUpdate): Promise<void>;
 }
 
 /** Publishes events to the other services. */
