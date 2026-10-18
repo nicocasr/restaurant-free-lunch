@@ -48,6 +48,22 @@ describe('placeOrders', () => {
       );
     });
 
+    it('announces a workday left unannounced before sending any order of it', async () => {
+      // The process that started the workday died before publishing WorkdayStarted
+      const { orders, publisher, handle } = setup();
+      const unannounced = randomUUID();
+      await orders.switchWorkday(workdayId, unannounced);
+
+      await handle({ idempotencyKey: randomUUID(), quantity: 2 });
+
+      expect(publisher.events.map(({ type }) => type)).toEqual([
+        'WorkdayStarted',
+        'OrderPlaced',
+        'OrderPlaced',
+      ]);
+      expect(publisher.ofType('WorkdayStarted')[0]?.payload.workdayId).toBe(unannounced);
+    });
+
     it('fails without creating anything when no workday is active', async () => {
       const { orders, publisher, handle } = setup();
       orders.activeWorkdayId = undefined;
