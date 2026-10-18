@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.12 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.13 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -20,6 +20,7 @@ Estado: **v1.12 — Aprobado (18/10/2026)**. Los cambios posteriores se registra
 | 1.10 | 17/10/2026 | §3.5: el backoff de market usa **full jitter** (espera al azar entre 0 y el tiempo base) |
 | 1.11 | 17/10/2026 | §3.3: los reintentos de market los hace la cola (visibilidad del mensaje), con la DLQ sin `maxReceiveCount` y esperas en segundos enteros |
 | 1.12 | 18/10/2026 | §3.6: el lote guarda sus `orderId` y los pedidos se escriben "si no existe" (límite de 100 ítems por transacción); `correlationId` = `orderId` |
+| 1.13 | 18/10/2026 | §3.7: la jornada nueva queda pendiente de publicar y se republica; dos clics simultáneos reciben la misma jornada; warehouse solo atiende pedidos de la jornada que ya inició |
 
 ---
 
@@ -452,10 +453,16 @@ Una **jornada** (`workday`) es un evento de donación, de principio a fin. Todo 
 **Flujo de "Nueva jornada":**
 1. El gerente presiona **"Nueva jornada"** → `POST /workdays` en **orders**, que es el dueño del concepto de jornada.
 2. orders valida que **no haya pedidos en curso** (ningún pedido distinto de `DELIVERED`) en la jornada actual. Si los hay, responde `409 Conflict` y el dashboard explica por qué el botón está deshabilitado.
-3. orders cambia la jornada activa con una escritura condicional (la BD como árbitro: dos clics simultáneos no crean dos jornadas) y emite `WorkdayStarted(workdayId)`.
+3. orders cambia la jornada activa con una escritura condicional ("solo si la activa sigue siendo la anterior"), la guarda como **pendiente de publicar** y emite `WorkdayStarted(workdayId)`.
+   Si llegan dos clics simultáneos, uno gana; el otro no recibe error, sino la jornada que ganó (el gerente quería una jornada nueva y ya existe).
+   `startWorkday` y `placeOrders` republican primero cualquier jornada pendiente, así que ningún `WorkdayStarted` se pierde si el proceso muere antes de publicarlo.
 4. **warehouse** consume `WorkdayStarted` y deja **5 unidades** de cada ingrediente. Es idempotente por `workdayId`.
    En la misma escritura reinicia los contadores de demanda (`waitingNeed` e `inFlight` en 0) y descarta los faltantes aún no publicados.
 5. **market** y **orders** etiquetan los nuevos registros con el `workdayId` activo.
+
+**`WorkdayStarted` puede llegar tarde a warehouse:** viaja en un salto, mientras que `IngredientsRequested` llega en dos (orders → kitchen → warehouse), pero SQS no garantiza el orden.
+Si un pedido de la jornada nueva llegara antes, se descontaría del stock de la jornada anterior y el reinicio a 5 borraría ese descuento.
+Por eso warehouse **solo atiende pedidos de la jornada que ya inició**: si llega uno de una jornada que todavía no conoce, falla y SQS lo reintenta, y para entonces `WorkdayStarted` ya llegó.
 
 **Compras atrasadas de una jornada anterior:** puede quedar una compra en curso al cerrar una jornada (por ejemplo, la plaza respondía `0` y market seguía reintentando).
 Cuando esa compra llega, warehouse la **ignora**: compara su `workdayId` con la jornada activa, en la misma escritura condicional.
