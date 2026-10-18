@@ -1,4 +1,5 @@
 import type { Batch, OrderRecord, OrdersRepository } from '../../src/application/ports';
+import { isInProgress } from '../../src/domain/order-status';
 
 /**
  * In-memory adapter for the orders port. Node runs it on a single thread, so every method is
@@ -8,6 +9,7 @@ export class InMemoryOrders implements OrdersRepository {
   activeWorkdayId?: string;
   private readonly batches = new Map<string, Batch>();
   private readonly orders = new Map<string, OrderRecord>();
+  private readonly unannounced = new Set<string>();
 
   get allOrders(): OrderRecord[] {
     return [...this.orders.values()];
@@ -23,6 +25,31 @@ export class InMemoryOrders implements OrdersRepository {
 
   activeWorkday(): Promise<string | undefined> {
     return Promise.resolve(this.activeWorkdayId);
+  }
+
+  countInProgress(workdayId: string): Promise<number> {
+    return Promise.resolve(
+      this.allOrders.filter((order) => order.workdayId === workdayId && isInProgress(order.status))
+        .length,
+    );
+  }
+
+  switchWorkday(from: string | undefined, to: string): Promise<boolean> {
+    if (this.activeWorkdayId !== from) {
+      return Promise.resolve(false);
+    }
+    this.activeWorkdayId = to;
+    this.unannounced.add(to);
+    return Promise.resolve(true);
+  }
+
+  pendingWorkdays(): Promise<string[]> {
+    return Promise.resolve([...this.unannounced]);
+  }
+
+  markWorkdayAnnounced(workdayId: string): Promise<void> {
+    this.unannounced.delete(workdayId);
+    return Promise.resolve();
   }
 
   createBatch(batch: Batch): Promise<Batch> {

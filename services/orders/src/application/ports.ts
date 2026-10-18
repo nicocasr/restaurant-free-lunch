@@ -21,6 +21,20 @@ export interface Batch {
 export interface OrdersRepository {
   activeWorkday(): Promise<string | undefined>;
 
+  /** Orders of the workday that are not delivered yet. */
+  countInProgress(workdayId: string): Promise<number>;
+
+  /**
+   * Only if the active workday is still `from`: makes `to` the active one and records it as
+   * pending to announce, in the same write. Returns false when another request got there first.
+   */
+  switchWorkday(from: string | undefined, to: string): Promise<boolean>;
+
+  /** Workdays that became active but whose WorkdayStarted was not published yet. */
+  pendingWorkdays(): Promise<string[]>;
+
+  markWorkdayAnnounced(workdayId: string): Promise<void>;
+
   /**
    * Stores the batch only if its key is new, and returns the one that is stored: a repeated
    * request gets the orders of the first attempt (PLANNING §3.6).
