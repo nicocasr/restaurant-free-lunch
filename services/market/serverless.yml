@@ -68,6 +68,8 @@ functions:
           maximumConcurrency: 10
   http:
     handler: src/entrypoints/lambda/handlers.http
+    # A query: it does not need the 30 s of a purchase, and the HTTP API stops waiting at 30 s.
+    timeout: 10
     # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
     reservedConcurrency: 10
     events:
