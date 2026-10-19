@@ -76,8 +76,9 @@ describe('trackOrder', () => {
     await track(events.reserved(orderId));
     expect(order()?.status).toBe('PREPARING');
 
-    await track(events.delivered(orderId));
-    expect(order()?.status).toBe('DELIVERED');
+    const delivery = events.delivered(orderId);
+    await track(delivery);
+    expect(order()).toMatchObject({ status: 'DELIVERED', deliveredAt: delivery.occurredAt });
   });
 
   it('never moves an order back when an event arrives late or twice', async () => {
@@ -108,6 +109,17 @@ describe('trackOrder', () => {
 
     expect(order()?.status).toBe('PREPARING');
     expect(order()?.missing).toBeUndefined();
+  });
+
+  it('writes nothing for OrderPlaced, since the order was saved as placed when it was created', async () => {
+    const orders = new InMemoryOrders();
+    const update = jest.spyOn(orders, 'updateOrder');
+
+    await trackOrder({ orders })(
+      createEvent('OrderPlaced', { orderId: randomUUID(), workdayId }, context),
+    );
+
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('ignores the events that do not move an order', async () => {

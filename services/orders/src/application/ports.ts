@@ -14,6 +14,9 @@ export interface OrderRecord {
   missing?: IngredientQuantity[];
   /** ISO timestamp of when the order started waiting for ingredients. */
   waitingSince?: string;
+  /** ISO timestamps of when the manager placed the dish and when it was delivered. */
+  placedAt?: string;
+  deliveredAt?: string;
 }
 
 /** What locates an order: its id and the workday it belongs to. */
@@ -24,6 +27,7 @@ export interface OrderUpdate {
   status: OrderStatus;
   recipe?: { recipeId: string; recipeName: string };
   waiting?: { missing: IngredientQuantity[]; since: string };
+  deliveredAt?: string;
 }
 
 /** A click of the manager: its Idempotency-Key and the ids of the orders it created. */

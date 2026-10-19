@@ -52,12 +52,14 @@ export function placeOrders(deps: {
       orderIds: Array.from({ length: quantity }, () => randomUUID()),
     });
 
+    const placedAt = new Date().toISOString();
     await deps.orders.saveNewOrders(
       batch.orderIds.map((orderId) => ({
         orderId,
         batchId: batch.batchId,
         workdayId: batch.workdayId,
         status: 'PLACED' as const,
+        placedAt,
       })),
     );
 
@@ -67,7 +69,7 @@ export function placeOrders(deps: {
       batch.orderIds.map((orderId) =>
         createEvent(
           'OrderPlaced',
-          { orderId, workdayId: batch.workdayId },
+          { orderId, workdayId: batch.workdayId, batchId: batch.batchId },
           { correlationId: orderId },
         ),
       ),

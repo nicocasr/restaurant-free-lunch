@@ -29,6 +29,7 @@ export function ordersRepositoryContract(
         batchId: randomUUID(),
         workdayId: workday,
         status: 'PLACED' as const,
+        placedAt: '2026-10-22T11:59:00.000Z',
       }));
 
     const find = async (orderId: string) =>
@@ -97,7 +98,9 @@ export function ordersRepositoryContract(
         const orders = placed(3);
         await repository.saveNewOrders([...orders, ...placed(2, randomUUID())]);
 
-        expect(await repository.listOrders(workdayId)).toHaveLength(3);
+        const listed = await repository.listOrders(workdayId);
+        expect(listed).toHaveLength(3);
+        expect(listed[0]?.placedAt).toBe('2026-10-22T11:59:00.000Z');
         expect(await repository.countInProgress(workdayId)).toBe(3);
       });
 
@@ -125,11 +128,21 @@ export function ordersRepositoryContract(
         const [order] = placed(1) as [OrderRecord];
         await repository.saveNewOrders([order]);
 
-        await repository.updateOrder(order, { status: 'DELIVERED' });
+        await repository.updateOrder(order, {
+          status: 'DELIVERED',
+          deliveredAt: '2026-10-22T12:00:00.000Z',
+        });
         await repository.updateOrder(order, { status: 'PREPARING' });
-        await repository.updateOrder(order, { status: 'DELIVERED' });
+        await repository.updateOrder(order, {
+          status: 'DELIVERED',
+          deliveredAt: '2026-10-22T12:05:00.000Z',
+        });
 
-        expect((await find(order.orderId))?.status).toBe('DELIVERED');
+        // The first delivery is the one that counts, and when it happened is kept
+        expect(await find(order.orderId)).toMatchObject({
+          status: 'DELIVERED',
+          deliveredAt: '2026-10-22T12:00:00.000Z',
+        });
         expect(await repository.countInProgress(workdayId)).toBe(0);
       });
 

@@ -32,6 +32,7 @@ describe('placeOrders', () => {
           batchId: idempotencyKey,
           workdayId,
           status: 'PLACED',
+          placedAt: expect.any(String) as string,
         })),
       );
     });
@@ -43,7 +44,10 @@ describe('placeOrders', () => {
 
       expect(publisher.ofType('OrderPlaced')).toEqual(
         batch.orderIds.map((orderId): unknown =>
-          expect.objectContaining({ correlationId: orderId, payload: { orderId, workdayId } }),
+          expect.objectContaining({
+            correlationId: orderId,
+            payload: { orderId, workdayId, batchId: batch.batchId },
+          }),
         ),
       );
     });

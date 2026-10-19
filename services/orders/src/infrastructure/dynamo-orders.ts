@@ -141,7 +141,10 @@ export class DynamoOrders implements OrdersRepository {
     }
   }
 
-  async updateOrder(order: OrderKey, { status, recipe, waiting }: OrderUpdate): Promise<void> {
+  async updateOrder(
+    order: OrderKey,
+    { status, recipe, waiting, deliveredAt }: OrderUpdate,
+  ): Promise<void> {
     if (recipe) {
       // Kept whenever it arrives: the recipe never changes, whatever the order of the events.
       await this.client
@@ -170,6 +173,10 @@ export class DynamoOrders implements OrdersRepository {
       assignments.push('#missing = :missing', 'waitingSince = :since');
       values[':missing'] = waiting.missing;
       values[':since'] = waiting.since;
+    }
+    if (deliveredAt) {
+      assignments.push('deliveredAt = :deliveredAt');
+      values[':deliveredAt'] = deliveredAt;
     }
     // Only forward (§3.6): a late or repeated event fails the condition and changes nothing,
     // and the delivery leaves the in-progress counter in the same transaction, exactly once.
@@ -211,6 +218,8 @@ export class DynamoOrders implements OrdersRepository {
           missing: order.missing,
           waitingSince: order.waitingSince,
         }),
+        ...(order.placedAt !== undefined && { placedAt: order.placedAt }),
+        ...(order.deliveredAt !== undefined && { deliveredAt: order.deliveredAt }),
       };
     });
   }

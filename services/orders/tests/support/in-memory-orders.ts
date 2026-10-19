@@ -37,7 +37,10 @@ export class InMemoryOrders implements OrdersRepository {
     return Promise.resolve(this.activeWorkdayId);
   }
 
-  updateOrder({ orderId }: OrderKey, { status, recipe, waiting }: OrderUpdate): Promise<void> {
+  updateOrder(
+    { orderId }: OrderKey,
+    { status, recipe, waiting, deliveredAt }: OrderUpdate,
+  ): Promise<void> {
     const order = this.orders.get(orderId);
     if (order) {
       const moved = advance(order.status, status) !== order.status;
@@ -46,6 +49,7 @@ export class InMemoryOrders implements OrdersRepository {
         ...recipe,
         ...(moved && { status }),
         ...(moved && waiting && { missing: waiting.missing, waitingSince: waiting.since }),
+        ...(moved && deliveredAt && { deliveredAt }),
       });
     }
     return Promise.resolve();

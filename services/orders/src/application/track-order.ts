@@ -1,29 +1,42 @@
 import type { DomainEvent } from '@alegra-lunch/contracts';
 
-import { statusFor } from '../domain/order-status';
 import type { OrderKey, OrdersRepository, OrderUpdate } from './ports';
 
 /** The change an event makes to its order, or undefined if the event does not move orders. */
 function updateFor(event: DomainEvent): { order: OrderKey; update: OrderUpdate } | undefined {
-  const status = statusFor(event.type);
-  if (!status || !('orderId' in event.payload)) {
-    return undefined;
-  }
-  const { orderId, workdayId } = event.payload;
-  const order = { orderId, workdayId };
+  const key = (payload: OrderKey): OrderKey => ({
+    orderId: payload.orderId,
+    workdayId: payload.workdayId,
+  });
 
+  // Order events are told apart by their type: payloads may carry fields they do not declare.
   switch (event.type) {
     case 'IngredientsRequested': {
       const { recipeId, recipeName } = event.payload;
-      return { order, update: { status, recipe: { recipeId, recipeName } } };
+      return {
+        order: key(event.payload),
+        update: { status: 'COOKING_REQUESTED', recipe: { recipeId, recipeName } },
+      };
     }
     case 'OrderWaitingIngredients':
       return {
-        order,
-        update: { status, waiting: { missing: event.payload.missing, since: event.occurredAt } },
+        order: key(event.payload),
+        update: {
+          status: 'WAITING_INGREDIENTS',
+          waiting: { missing: event.payload.missing, since: event.occurredAt },
+        },
+      };
+    case 'IngredientsReserved':
+      return { order: key(event.payload), update: { status: 'PREPARING' } };
+    case 'OrderDelivered':
+      return {
+        order: key(event.payload),
+        update: { status: 'DELIVERED', deliveredAt: event.occurredAt },
       };
     default:
-      return { order, update: { status } };
+      // OrderPlaced changes nothing: the order was saved as placed when it was created, and
+      // the other events do not move an order.
+      return undefined;
   }
 }
 
