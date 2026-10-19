@@ -1,0 +1,143 @@
+# Realtime in AWS (PLANNING §2): API Gateway WebSocket keeps the dashboard sockets, a table
+# remembers who is connected, and a queue gathers the events to push them in batches.
+service: alegra-lunch-realtime
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs24.x
+  # Graviton: about 20% cheaper per millisecond than x86.
+  architecture: arm64
+  region: us-east-2
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  timeout: 10
+  logRetentionInDays: 7
+  # The dashboard only listens: with no $default route, a message it sends invokes nothing.
+  websocketsApiName: alegra-lunch-${sls:stage}-realtime
+  environment:
+    NODE_OPTIONS: --enable-source-maps
+    TABLE_NAME: !Ref ConnectionsTable
+    WEBSOCKET_MANAGEMENT_URL: !Join
+      - ''
+      - - https://
+        - !Ref WebsocketsApi
+        - .execute-api.${aws:region}.amazonaws.com/${sls:stage}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+          Resource: !GetAtt ConnectionsTable.Arn
+        - Effect: Allow
+          Action: execute-api:ManageConnections
+          Resource: !Join
+            - ''
+            - - 'arn:aws:execute-api:${aws:region}:${aws:accountId}:'
+              - !Ref WebsocketsApi
+              - /${sls:stage}/POST/@connections/*
+
+build:
+  esbuild:
+    bundle: true
+    sourcemap: true
+
+functions:
+  connect:
+    handler: src/entrypoints/lambda/handlers.connect
+    events:
+      - websocket: $connect
+  disconnect:
+    handler: src/entrypoints/lambda/handlers.disconnect
+    events:
+      - websocket: $disconnect
+  queue:
+    handler: src/entrypoints/lambda/handlers.queue
+    events:
+      - sqs:
+          arn: !GetAtt RealtimeQueue.Arn
+          # The queue gathers the events of a second and they go out as one message, like the
+          # ~500 ms batcher of the container: messages depend on time, not on volume (§3.3).
+          batchSize: 100
+          maximumBatchingWindow: 1
+          # The account allows 10 Lambdas at a time until the quota increase (PLANNING §2).
+          maximumConcurrency: 2
+
+resources:
+  Resources:
+    ConnectionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: alegra-lunch-${sls:stage}-connections
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+
+    # Delivery to the dashboard is best effort: it reloads its data when it reconnects. So a
+    # batch that keeps failing goes to the DLQ after 3 tries instead of retrying forever.
+    RealtimeDlq:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: alegra-lunch-${sls:stage}-realtime-dlq
+        MessageRetentionPeriod: 1209600
+
+    # An old event is useless to a live dashboard, so the queue keeps them only 5 minutes.
+    RealtimeQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: alegra-lunch-${sls:stage}-realtime
+        VisibilityTimeout: 60
+        MessageRetentionPeriod: 300
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt RealtimeDlq.Arn
+          maxReceiveCount: 3
+
+    RealtimeQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [!Ref RealtimeQueue]
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal: { Service: sns.amazonaws.com }
+              Action: sqs:SendMessage
+              Resource: !GetAtt RealtimeQueue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn:
+                    - ${cf:alegra-lunch-infra-${sls:stage}.EventsTopicArn}
+                    - ${cf:alegra-lunch-infra-${sls:stage}.ShortagesTopicArn}
+
+    RealtimeEventsSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${cf:alegra-lunch-infra-${sls:stage}.EventsTopicArn}
+        Protocol: sqs
+        Endpoint: !GetAtt RealtimeQueue.Arn
+        RawMessageDelivery: true
+        FilterPolicy:
+          type:
+            - WorkdayStarted
+            - OrderPlaced
+            - IngredientsRequested
+            - OrderWaitingIngredients
+            - IngredientsReserved
+            - IngredientPurchased
+            - OrderDelivered
+
+    RealtimeShortagesSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${cf:alegra-lunch-infra-${sls:stage}.ShortagesTopicArn}
+        Protocol: sqs
+        Endpoint: !GetAtt RealtimeQueue.Arn
+        RawMessageDelivery: true
+        FilterPolicy:
+          type: [StockShortage]
