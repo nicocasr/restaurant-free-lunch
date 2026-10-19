@@ -34,7 +34,8 @@ resources:
         CorsConfiguration:
           AllowOrigins: ['*']
           AllowMethods: [GET, POST, OPTIONS]
-          AllowHeaders: [content-type]
+          # POST /orders sends an Idempotency-Key, so a retried click never orders twice.
+          AllowHeaders: [content-type, idempotency-key]
 
     # Throttling keeps an abuse from burning the credits: requests above it get a 429.
     # A batch of a thousand dishes is a single POST /orders, so the dashboard stays far below.
