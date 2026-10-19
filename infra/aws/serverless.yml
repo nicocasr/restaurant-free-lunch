@@ -32,7 +32,9 @@ resources:
         Name: alegra-lunch-${sls:stage}
         ProtocolType: HTTP
         CorsConfiguration:
-          AllowOrigins: ['*']
+          # Only the dashboard on CloudFront may call the API from a browser. The web stack is
+          # created after this one, so the very first deploy allows '*' until infra is redeployed.
+          AllowOrigins: ["${cf:alegra-lunch-web-${sls:stage}.WebUrl, '*'}"]
           AllowMethods: [GET, POST, OPTIONS]
           # POST /orders sends an Idempotency-Key, so a retried click never orders twice.
           AllowHeaders: [content-type, idempotency-key]
