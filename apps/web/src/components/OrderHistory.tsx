@@ -1,7 +1,5 @@
 import type { PlacedOrder } from '../state/dashboard';
 
-const MAX_RECIPES_SHOWN = 3;
-
 /** "1:05" from a duration in milliseconds. */
 function minutesAndSeconds(ms: number): string {
   const seconds = Math.round(ms / 1000);
@@ -30,8 +28,6 @@ export function OrderHistory(props: { orders: PlacedOrder[] }) {
             </thead>
             <tbody>
               {props.orders.map((order, index) => {
-                const shown = order.served.slice(0, MAX_RECIPES_SHOWN);
-                const more = order.served.length - shown.length;
                 return (
                   <tr key={order.batchId ?? 'unknown'}>
                     <td className="number">{props.orders.length - index}</td>
@@ -46,12 +42,12 @@ export function OrderHistory(props: { orders: PlacedOrder[] }) {
                       </div>
                     </td>
                     <td>
-                      {shown.length === 0
+                      {/* At most six recipes: every one of them fits, with its count. */}
+                      {order.served.length === 0
                         ? '—'
-                        : shown
+                        : order.served
                             .map(({ recipeName, count }) => `${recipeName} ${String(count)}`)
                             .join(' · ')}
-                      {more > 0 && <span className="muted"> · +{more} more</span>}
                     </td>
                     <td className="number">
                       {order.tookMs !== undefined ? (
