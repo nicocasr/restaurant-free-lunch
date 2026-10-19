@@ -59,10 +59,9 @@ functions:
     events:
       - sqs:
           arn: !GetAtt RealtimeQueue.Arn
-          # The queue gathers the events of a second and they go out as one message, like the
-          # ~500 ms batcher of the container: messages depend on time, not on volume (§3.3).
-          batchSize: 100
-          maximumBatchingWindow: 1
+          # Up to 10 events per push and no batching window: with a window, the last events of
+          # a burst waited ~20 s for the next poll of a quiet queue (PLANNING §2).
+          batchSize: 10
           # The account allows 10 Lambdas at a time until the quota increase (PLANNING §2).
           maximumConcurrency: 2
 
