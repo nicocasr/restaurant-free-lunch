@@ -1,5 +1,5 @@
 import type { DomainEvent } from '@alegra-lunch/contracts';
-import { useCallback, useEffect, useReducer, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
 import { api, type Inventory, type Recipe } from './api';
 import { AssistantPanel } from './components/AssistantPanel';
@@ -50,10 +50,16 @@ export function App() {
   }, []);
 
   // The events do not carry the whole stock: read it again, at most once per batch (§2).
+  // A purchase reaches the dashboard and the warehouse at the same time, so that read may come
+  // before the warehouse applies it: one more read a second after the last change settles it.
+  const settle = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     if (!state.inventoryOutdated) return;
     dispatch({ type: 'inventoryReloaded' });
-    void api.inventory().then(setInventory, () => undefined);
+    const reload = () => void api.inventory().then(setInventory, () => undefined);
+    reload();
+    clearTimeout(settle.current);
+    settle.current = setTimeout(reload, 1_000);
   }, [state.inventoryOutdated]);
 
   const preparing = inPreparation(state);
@@ -73,7 +79,8 @@ export function App() {
             {error}
           </p>
         )}
-        <OrderForm />
+        {/* A new workday starts a clean form: the notice of the last order belongs to the old one. */}
+        <OrderForm key={state.workdayId} />
         <Stats preparing={preparing} delivered={history.length} />
         <OrdersInPreparation orders={preparing} />
         <InventoryStrip inventory={inventory} />
