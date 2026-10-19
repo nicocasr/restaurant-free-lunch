@@ -113,6 +113,25 @@ describe('parseEvent', () => {
     expect(parseEvent(envelope(type, payload)).type).toBe(type);
   });
 
+  it('keeps the fields it does not know, so a service with an older contract forwards them', () => {
+    // Tolerant reader: services deploy one at a time, so a newer producer may add a field a
+    // consumer does not know yet. Realtime once dropped the batchId of OrderPlaced this way.
+    const event = parseEvent({
+      ...envelope('OrderPlaced', { orderId, workdayId, addedLater: 'kept' }),
+      traceFlags: 'kept too',
+    });
+
+    expect(event.payload).toEqual({ orderId, workdayId, addedLater: 'kept' });
+    expect(event).toMatchObject({ traceFlags: 'kept too' });
+  });
+
+  it('accepts an OrderPlaced with the batch it belongs to, so a dashboard can group them', () => {
+    const batchId = randomUUID();
+    const event = parseEvent(envelope('OrderPlaced', { orderId, workdayId, batchId }));
+
+    expect(event.payload).toEqual({ orderId, workdayId, batchId });
+  });
+
   it('rejects an unknown event type', () => {
     expect(() => parseEvent(envelope('OrderCancelled', { orderId }))).toThrow(InvalidEventError);
   });

@@ -7,18 +7,28 @@ import { IngredientQuantitySchema, IngredientSchema } from './ingredients';
 const positiveInt = z.int().positive();
 
 /**
+ * Tolerant reader: every schema keeps the fields it does not know instead of dropping them.
+ * Services deploy one at a time, so a producer may add an optional field before a consumer
+ * knows it; a service in between (realtime) must forward it untouched.
+ *
  * Payload schemas, one per event. Every event carries the workday it belongs to,
  * so history can be grouped by workday (PLANNING §3.7).
  */
 const payloadSchemas = {
   /** orders → warehouse: a new workday began; the warehouse resets to 5 units of each ingredient. */
-  WorkdayStarted: z.object({ workdayId: z.uuid() }),
+  WorkdayStarted: z.looseObject({ workdayId: z.uuid() }),
 
   /** orders → kitchen: one event per dish. */
-  OrderPlaced: z.object({ orderId: z.uuid(), workdayId: z.uuid() }),
+  OrderPlaced: z.looseObject({
+    orderId: z.uuid(),
+    workdayId: z.uuid(),
+    // The click of the manager the dish belongs to. Optional, so consumers of version 1
+    // keep working: adding a field this way does not break the contract.
+    batchId: z.uuid().optional(),
+  }),
 
   /** kitchen → warehouse: the randomly chosen recipe and the ingredients it needs. */
-  IngredientsRequested: z.object({
+  IngredientsRequested: z.looseObject({
     orderId: z.uuid(),
     workdayId: z.uuid(),
     recipeId: z.string().min(1),
@@ -27,17 +37,17 @@ const payloadSchemas = {
   }),
 
   /** warehouse → orders: the order joined the waiting list, with what it still lacks. */
-  OrderWaitingIngredients: z.object({
+  OrderWaitingIngredients: z.looseObject({
     orderId: z.uuid(),
     workdayId: z.uuid(),
     missing: z.array(IngredientQuantitySchema).nonempty(),
   }),
 
   /** warehouse → kitchen: every ingredient was reserved and deducted atomically. */
-  IngredientsReserved: z.object({ orderId: z.uuid(), workdayId: z.uuid() }),
+  IngredientsReserved: z.looseObject({ orderId: z.uuid(), workdayId: z.uuid() }),
 
   /** warehouse → market: aggregated demand for one ingredient, not tied to any order. */
-  StockShortage: z.object({
+  StockShortage: z.looseObject({
     shortageId: z.uuid(),
     workdayId: z.uuid(),
     ingredient: IngredientSchema,
@@ -45,7 +55,7 @@ const payloadSchemas = {
   }),
 
   /** market → warehouse: one successful call to the farmers market. */
-  IngredientPurchased: z.object({
+  IngredientPurchased: z.looseObject({
     purchaseId: z.uuid(),
     shortageId: z.uuid(),
     workdayId: z.uuid(),
@@ -54,7 +64,7 @@ const payloadSchemas = {
   }),
 
   /** kitchen → orders: the dish was prepared and handed out. */
-  OrderDelivered: z.object({
+  OrderDelivered: z.looseObject({
     orderId: z.uuid(),
     workdayId: z.uuid(),
     recipeId: z.string().min(1),
@@ -81,7 +91,7 @@ export interface EventEnvelope<T extends EventType = EventType> {
 export type DomainEvent = { [T in EventType]: EventEnvelope<T> }[EventType];
 
 function envelopeSchema<T extends EventType>(type: T) {
-  return z.object({
+  return z.looseObject({
     id: z.uuid(),
     type: z.literal(type),
     version: z.literal(1),
