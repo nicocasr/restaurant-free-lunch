@@ -37,7 +37,7 @@ describe('market API', () => {
       ingredient: 'onion' as const,
       quantity: 3,
     };
-    await purchases.recordSale(sale, { requested: 2, bought: 3, failedAttempts: 0 });
+    await purchases.recordSale(sale);
 
     const { status, body } = await get({ workdayId });
 

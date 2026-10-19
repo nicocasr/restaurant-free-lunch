@@ -28,13 +28,14 @@ export interface PurchaseRepository {
   startOrResume(shortage: Shortage): Promise<PurchaseRecord>;
 
   /**
-   * Adds the sale to the purchase history, pending to publish, and saves the progress, in the
-   * same write.
+   * Adds the sale to the purchase history, pending to publish, and in the same write adds its
+   * units to what was bought and resets the failed attempts. Adding, rather than overwriting
+   * a total, keeps what was bought equal to the sum of the sales even with two buyers at once.
    */
-  recordSale(sale: Sale, progress: PurchaseProgress): Promise<void>;
+  recordSale(sale: Sale): Promise<void>;
 
-  /** Saves the progress after a call in which the market had nothing to sell. */
-  saveProgress(shortageId: string, progress: PurchaseProgress): Promise<void>;
+  /** Counts a round in which the market had nothing to sell. */
+  recordFailedRound(shortageId: string): Promise<void>;
 
   /** Sales of the shortage that were recorded but not yet published. */
   pendingSales(shortageId: string): Promise<Sale[]>;

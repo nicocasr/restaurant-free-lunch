@@ -18,21 +18,46 @@ export function startPurchase(requested: number): PurchaseProgress {
   return { requested, bought: 0, failedAttempts: 0 };
 }
 
+/** Calls to the farmers market at the same time, at most (PLANNING §3.5). */
+export const MAX_PARALLEL_CALLS = 5;
+
+/** What the market sold per call in the tests of PLANNING §3.5 (1 to 4 units). */
+const EXPECTED_UNITS_PER_CALL = 2.5;
+
 /**
- * Applies one answer of the farmers market (PLANNING §3.5). The market decides how much it
- * sells: a purchase completes once it covers what was requested, and the extra units are
- * leftovers for the warehouse. A sale resets the backoff, since the market has stock again.
+ * How many calls the next round makes at once: one by one, a large purchase takes a call of
+ * ~0.3 s per 2 or 3 units. Fewer calls as the purchase gets close keep leftovers small.
  */
-export function recordSale(
+export function callsForNextRound(progress: PurchaseProgress): number {
+  const missing = progress.requested - progress.bought;
+  if (missing <= 0) {
+    return 0;
+  }
+  return Math.min(MAX_PARALLEL_CALLS, Math.ceil(missing / EXPECTED_UNITS_PER_CALL));
+}
+
+/**
+ * Applies the answers of one round of calls (PLANNING §3.5). The market decides how much it
+ * sells: a purchase completes once it covers what was requested, and the extra units are
+ * leftovers for the warehouse. Any sale resets the backoff, since the market has stock again;
+ * only a round where no call sold anything waits before the next one.
+ */
+export function recordRound(
   progress: PurchaseProgress,
-  quantitySold: number,
+  answers: readonly number[],
   random?: RandomSource,
 ): { progress: PurchaseProgress; next: NextStep } {
-  if (!Number.isInteger(quantitySold) || quantitySold < 0) {
-    throw new RangeError(`The market sells a whole quantity >= 0, got ${String(quantitySold)}`);
+  if (answers.length === 0) {
+    throw new RangeError('A round has at least one answer of the market');
+  }
+  for (const quantitySold of answers) {
+    if (!Number.isInteger(quantitySold) || quantitySold < 0) {
+      throw new RangeError(`The market sells a whole quantity >= 0, got ${String(quantitySold)}`);
+    }
   }
 
-  if (quantitySold === 0) {
+  const sold = answers.reduce((total, quantity) => total + quantity, 0);
+  if (sold === 0) {
     const failedAttempts = progress.failedAttempts + 1;
     return {
       progress: { ...progress, failedAttempts },
@@ -40,9 +65,18 @@ export function recordSale(
     };
   }
 
-  const bought = progress.bought + quantitySold;
+  const bought = progress.bought + sold;
   return {
     progress: { ...progress, bought, failedAttempts: 0 },
     next: bought >= progress.requested ? { action: 'complete' } : { action: 'buy' },
   };
+}
+
+/** A round of a single call. */
+export function recordSale(
+  progress: PurchaseProgress,
+  quantitySold: number,
+  random?: RandomSource,
+): { progress: PurchaseProgress; next: NextStep } {
+  return recordRound(progress, [quantitySold], random);
 }

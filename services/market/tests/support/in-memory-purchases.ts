@@ -31,18 +31,30 @@ export class InMemoryPurchases implements PurchaseRepository {
     return Promise.resolve(record);
   }
 
-  recordSale(sale: Sale, progress: PurchaseProgress): Promise<void> {
+  recordSale(sale: Sale): Promise<void> {
     this.sales.push(sale);
     this.unpublished.add(sale.purchaseId);
-    return this.saveProgress(sale.shortageId, progress);
+    this.update(sale.shortageId, (progress) => ({
+      ...progress,
+      bought: progress.bought + sale.quantity,
+      failedAttempts: 0,
+    }));
+    return Promise.resolve();
   }
 
-  saveProgress(shortageId: string, progress: PurchaseProgress): Promise<void> {
+  recordFailedRound(shortageId: string): Promise<void> {
+    this.update(shortageId, (progress) => ({
+      ...progress,
+      failedAttempts: progress.failedAttempts + 1,
+    }));
+    return Promise.resolve();
+  }
+
+  private update(shortageId: string, change: (progress: PurchaseProgress) => PurchaseProgress) {
     const record = this.records.get(shortageId);
     if (record) {
-      this.records.set(shortageId, { ...record, progress });
+      this.records.set(shortageId, { ...record, progress: change(record.progress) });
     }
-    return Promise.resolve();
   }
 
   pendingSales(shortageId: string): Promise<Sale[]> {

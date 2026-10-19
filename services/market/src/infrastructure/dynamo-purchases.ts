@@ -10,7 +10,7 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 
 import type { PurchaseRecord, PurchaseRepository, Sale, Shortage } from '../application/ports';
-import { startPurchase, type PurchaseProgress } from '../domain/purchase-progress';
+import { startPurchase } from '../domain/purchase-progress';
 
 const keys = {
   // The purchase of a shortage and its sales share a partition: its full history in one query.
@@ -59,7 +59,7 @@ export class DynamoPurchases implements PurchaseRepository {
     }
   }
 
-  async recordSale(sale: Sale, progress: PurchaseProgress): Promise<void> {
+  async recordSale(sale: Sale): Promise<void> {
     await this.client.send(
       new TransactWriteCommand({
         TransactItems: [
@@ -75,8 +75,9 @@ export class DynamoPurchases implements PurchaseRepository {
             Update: {
               TableName: this.tableName,
               Key: keys.purchase(sale.shortageId),
-              UpdateExpression: 'SET progress = :progress',
-              ExpressionAttributeValues: { ':progress': progress },
+              // ADD is atomic: two buyers at once can never lose each other's units.
+              UpdateExpression: 'ADD progress.bought :quantity SET progress.failedAttempts = :zero',
+              ExpressionAttributeValues: { ':quantity': sale.quantity, ':zero': 0 },
             },
           },
         ],
@@ -84,13 +85,13 @@ export class DynamoPurchases implements PurchaseRepository {
     );
   }
 
-  async saveProgress(shortageId: string, progress: PurchaseProgress): Promise<void> {
+  async recordFailedRound(shortageId: string): Promise<void> {
     await this.client.send(
       new UpdateCommand({
         TableName: this.tableName,
         Key: keys.purchase(shortageId),
-        UpdateExpression: 'SET progress = :progress',
-        ExpressionAttributeValues: { ':progress': progress },
+        UpdateExpression: 'ADD progress.failedAttempts :one',
+        ExpressionAttributeValues: { ':one': 1 },
       }),
     );
   }

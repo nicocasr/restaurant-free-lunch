@@ -1,4 +1,10 @@
-import { recordSale, startPurchase } from '../../src/domain/purchase-progress';
+import {
+  MAX_PARALLEL_CALLS,
+  callsForNextRound,
+  recordRound,
+  recordSale,
+  startPurchase,
+} from '../../src/domain/purchase-progress';
 
 const half = () => 0.5;
 
@@ -83,5 +89,47 @@ describe('recordSale', () => {
 
   it.each([-1, 1.5, Number.NaN])('rejects a sold quantity of %p', (quantitySold) => {
     expect(() => recordSale(startPurchase(3), quantitySold, half)).toThrow(RangeError);
+  });
+});
+
+describe('callsForNextRound', () => {
+  it('calls the market several times at once while much is missing, up to a limit', () => {
+    expect(MAX_PARALLEL_CALLS).toBe(5);
+    expect(callsForNextRound(startPurchase(48))).toBe(5);
+  });
+
+  it('calls fewer times as the purchase gets close, so leftovers stay small', () => {
+    // The market sells about 2.5 units per call: 4 missing units need about 2 calls
+    expect(callsForNextRound({ requested: 10, bought: 6, failedAttempts: 0 })).toBe(2);
+    expect(callsForNextRound({ requested: 10, bought: 9, failedAttempts: 0 })).toBe(1);
+  });
+
+  it('makes no call once the purchase is covered', () => {
+    expect(callsForNextRound({ requested: 3, bought: 4, failedAttempts: 0 })).toBe(0);
+  });
+});
+
+describe('recordRound', () => {
+  it('adds up every sale of the round', () => {
+    expect(recordRound(startPurchase(10), [2, 0, 3], half)).toEqual({
+      progress: { requested: 10, bought: 5, failedAttempts: 0 },
+      next: { action: 'buy' },
+    });
+  });
+
+  it('completes the purchase when the round covers it', () => {
+    expect(recordRound(startPurchase(4), [3, 2], half).next).toEqual({ action: 'complete' });
+  });
+
+  it('waits only when no call of the round sold anything', () => {
+    expect(recordRound(startPurchase(4), [0, 0, 0], half)).toEqual({
+      progress: { requested: 4, bought: 0, failedAttempts: 1 },
+      next: { action: 'wait', delayMs: 500 },
+    });
+  });
+
+  it('rejects a round without answers or with an invalid quantity', () => {
+    expect(() => recordRound(startPurchase(4), [], half)).toThrow(RangeError);
+    expect(() => recordRound(startPurchase(4), [2, -1], half)).toThrow(RangeError);
   });
 });
