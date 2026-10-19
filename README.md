@@ -10,7 +10,8 @@ it all in real time.
 
 Built for the Alegra backend challenge: Node.js and TypeScript microservices without Express,
 Nest or similar frameworks, each with its own Dockerfile, deployed serverless on AWS at no cost.
-Every decision and its reason is in [docs/PLANNING.md](docs/PLANNING.md).
+How it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); every decision and its
+reason is in [docs/PLANNING.md](docs/PLANNING.md).
 
 ## How it works
 
@@ -133,5 +134,6 @@ infra/localstack/    tables, topics and queues for docker compose
 infra/aws/           shared AWS stack
 scripts/             AWS deploy and end-to-end check
 load/                Artillery load test
-docs/PLANNING.md     decisions, architecture and plan
+docs/ARCHITECTURE.md how it is built and why it stays correct under load
+docs/PLANNING.md     decisions, alternatives and plan
 ```
