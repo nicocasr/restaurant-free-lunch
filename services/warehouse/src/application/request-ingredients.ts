@@ -1,7 +1,7 @@
 import { createEvent, type EventEnvelope } from '@alegra-lunch/contracts';
 
 import type { EventPublisher, WarehouseRepository } from './ports';
-import { publishPendingReservations } from './publish-reservations';
+import { publishPendingReservations, publishReservation } from './publish-reservations';
 import { requestPurchaseIfNeeded } from './request-purchase';
 
 /** The order belongs to a workday the warehouse has not started yet: the message is retried. */
@@ -45,8 +45,13 @@ export function requestIngredients(deps: {
 
     // Lost wakeup: stock may have arrived after the failed reservation but before the order
     // joined the list, so nobody would retry it. 'not-waiting' means another process already
-    // reserved it; either way its reservation is published if it is still pending.
-    if ((await deps.warehouse.reserveFromWaiting(order)) !== 'insufficient') {
+    // reserved it, so only then pending reservations are looked for.
+    const retried = await deps.warehouse.reserveFromWaiting(order);
+    if (retried === 'reserved') {
+      await publishReservation(deps, { orderId, workdayId }, context);
+      return;
+    }
+    if (retried === 'not-waiting') {
       await publishPendingReservations(deps, context);
       return;
     }
@@ -59,8 +64,11 @@ export function requestIngredients(deps: {
       ),
     );
 
-    for (const { ingredient } of ingredients) {
-      await requestPurchaseIfNeeded(deps, ingredient, { workdayId, ...context });
-    }
+    // Each ingredient is independent of the others, so they are evaluated at the same time.
+    await Promise.all(
+      ingredients.map(({ ingredient }) =>
+        requestPurchaseIfNeeded(deps, ingredient, { workdayId, ...context }),
+      ),
+    );
   };
 }

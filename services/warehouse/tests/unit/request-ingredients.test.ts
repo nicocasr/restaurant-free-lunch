@@ -197,6 +197,25 @@ describe('requestIngredients', () => {
       });
     });
 
+    it('tells the kitchen when another process took the order out first and died before telling', async () => {
+      // The other process reserved the order (leaving it pending to publish) and died: this
+      // one finds it gone from the waiting list and publishes the pending reservation
+      const { warehouse, publisher, handle } = setupRace();
+      const takeOut = warehouse.reserveFromWaiting.bind(warehouse);
+      jest.spyOn(warehouse, 'reserveFromWaiting').mockImplementationOnce(async (order) => {
+        await takeOut(order);
+        return 'not-waiting';
+      });
+      const request = ingredientsRequested(changua);
+
+      await handle(request);
+
+      expect(publisher.ofType('IngredientsReserved').map(({ payload }) => payload.orderId)).toEqual(
+        [request.payload.orderId],
+      );
+      expect(await warehouse.pendingReservations()).toEqual([]);
+    });
+
     it('does not deduct twice when the message is redelivered', async () => {
       const { warehouse, publisher, handle } = setupRace();
       const request = ingredientsRequested(changua);
@@ -210,6 +229,19 @@ describe('requestIngredients', () => {
   });
 
   describe('purchase requests to the market', () => {
+    it('does not look for unpublished purchases of an ingredient with none in flight', async () => {
+      // An unpublished shortage always leaves units in flight, so with none there is nothing
+      // to look for: one database query less per ingredient
+      const { warehouse, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 1, onion: 5 });
+      const pending = jest.spyOn(warehouse, 'pendingShortages');
+
+      await handle(ingredientsRequested(changua));
+
+      const looked = pending.mock.calls.map(([ingredient]) => ingredient);
+      expect(looked).not.toContain('onion');
+    });
+
     it('requests only the missing ingredients', async () => {
       const { warehouse, publisher, handle } = setup();
       warehouse.stock = stockOf({ chicken: 5, potato: 5, rice: 5 });

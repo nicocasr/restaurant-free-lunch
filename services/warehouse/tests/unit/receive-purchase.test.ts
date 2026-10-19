@@ -107,6 +107,22 @@ describe('receivePurchase', () => {
   });
 
   describe('serving the waiting list', () => {
+    it('tells the kitchen about the orders it served without looking for pending ones', async () => {
+      // A reservation is only left pending when a process dies, and then SQS hands the
+      // purchase over again as a duplicate: only that case needs to look for pending ones
+      const { warehouse, publisher, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 2 });
+      const order = waitingOrder(0, changua);
+      await warehouse.enqueue(order);
+      const pending = jest.spyOn(warehouse, 'pendingReservations');
+
+      await handle(ingredientPurchased('onion', 1));
+
+      expect(reservedOrderIds(publisher)).toEqual([order.orderId]);
+      expect(pending).not.toHaveBeenCalled();
+      expect(await warehouse.pendingReservations()).toEqual([]);
+    });
+
     it('serves a newer order that fits when the oldest one still does not (flexible FIFO)', async () => {
       // 2 potatoes arrive: the Ajiaco (#1) needs 3, the Caldo (#2) needs 2
       const { warehouse, publisher, handle } = setup();
@@ -203,6 +219,20 @@ describe('receivePurchase', () => {
   });
 
   describe('re-evaluating the demand', () => {
+    it('only evaluates the ingredient bought and the ones the waiting orders still need', async () => {
+      // Every evaluation reads the database: with many purchases, evaluating all ten
+      // ingredients each time made the warehouse the bottleneck (PLANNING §3.3)
+      const { warehouse, handle } = setup();
+      warehouse.stock = stockOf({ cheese: 1 });
+      await warehouse.enqueue(waitingOrder(0, changua));
+      const read = jest.spyOn(warehouse, 'readIngredient');
+
+      await handle(ingredientPurchased('potato', 2));
+
+      const evaluated = new Set(read.mock.calls.map(([ingredient]) => ingredient));
+      expect(evaluated).toEqual(new Set(['potato', 'cheese', 'onion']));
+    });
+
     function shortages(publisher: InMemoryPublisher) {
       return publisher.ofType('StockShortage').map(({ payload }) => ({
         ingredient: payload.ingredient,

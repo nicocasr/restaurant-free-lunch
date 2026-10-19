@@ -1,6 +1,16 @@
 import { createEvent } from '@alegra-lunch/contracts';
 
-import type { EventPublisher, WarehouseRepository } from './ports';
+import type { EventPublisher, PendingReservation, WarehouseRepository } from './ports';
+
+/** Tells the kitchen it can prepare an order reserved from the waiting list, and forgets it. */
+export async function publishReservation(
+  deps: { warehouse: WarehouseRepository; publisher: EventPublisher },
+  reservation: PendingReservation,
+  context: { correlationId: string },
+): Promise<void> {
+  await deps.publisher.publish(createEvent('IngredientsReserved', reservation, context));
+  await deps.warehouse.markReservationPublished(reservation.orderId);
+}
 
 /**
  * Tells the kitchen about every reservation made from the waiting list that is still pending.
@@ -12,7 +22,6 @@ export async function publishPendingReservations(
   context: { correlationId: string },
 ): Promise<void> {
   for (const reservation of await deps.warehouse.pendingReservations()) {
-    await deps.publisher.publish(createEvent('IngredientsReserved', reservation, context));
-    await deps.warehouse.markReservationPublished(reservation.orderId);
+    await publishReservation(deps, reservation, context);
   }
 }
