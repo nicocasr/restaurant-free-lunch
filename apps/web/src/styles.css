@@ -344,6 +344,29 @@ th {
   text-transform: capitalize;
 }
 
+/* Purchases and order history */
+.capitalize {
+  text-transform: capitalize;
+}
+
+th.number,
+td.number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+progress {
+  width: 120px;
+  height: 8px;
+  accent-color: var(--accent);
+}
+
 /* Lists */
 .purchases,
 .history {

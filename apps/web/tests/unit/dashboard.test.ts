@@ -5,6 +5,7 @@ import { createEvent, type DomainEvent } from '@alegra-lunch/contracts';
 import {
   dashboardReducer,
   delivered,
+  orderHistory,
   emptyDashboard,
   inPreparation,
   type DashboardState,
@@ -26,7 +27,8 @@ function apply(state: DashboardState, ...events: DomainEvent[]): DashboardState 
   return dashboardReducer(state, { type: 'events', events });
 }
 
-const placed = (orderId: string) => createEvent('OrderPlaced', { orderId, workdayId }, context);
+const placed = (orderId: string, batchId?: string) =>
+  createEvent('OrderPlaced', { orderId, workdayId, ...(batchId && { batchId }) }, context);
 const requested = (orderId: string) =>
   createEvent(
     'IngredientsRequested',
@@ -192,5 +194,87 @@ describe('dashboard state', () => {
     );
 
     expect(delivered(state).map(({ orderId }) => orderId)).toEqual([second, first]);
+  });
+
+  it('has one row per order the manager placed, the latest first, with its progress', () => {
+    const [first, second] = [randomUUID(), randomUUID()];
+    const [a, b, c] = [randomUUID(), randomUUID(), randomUUID()];
+
+    const state = apply(
+      loaded(),
+      placed(a, first),
+      placed(b, first),
+      placed(c, second),
+      requested(a),
+      deliveredEvent(a),
+    );
+
+    expect(orderHistory(state)).toEqual([
+      expect.objectContaining({ batchId: second, dishes: 1, delivered: 0, tookMs: undefined }),
+      expect.objectContaining({
+        batchId: first,
+        dishes: 2,
+        delivered: 1,
+        served: [{ recipeName: 'Ajiaco santafereño', count: 1 }],
+      }),
+    ]);
+  });
+
+  it('counts the dishes served per recipe, the most served first', () => {
+    const batch = randomUUID();
+    const orders = Array.from({ length: 3 }, (_, index) => ({
+      orderId: randomUUID(),
+      status: 'DELIVERED' as const,
+      batchId: batch,
+      recipeName: index === 0 ? 'Changua con queso' : 'Ajiaco santafereño',
+    }));
+
+    const state = dashboardReducer(emptyDashboard, {
+      type: 'loaded',
+      workdayId,
+      orders,
+      purchases: [],
+    });
+
+    expect(orderHistory(state)[0]?.served).toEqual([
+      { recipeName: 'Ajiaco santafereño', count: 2 },
+      { recipeName: 'Changua con queso', count: 1 },
+    ]);
+  });
+
+  it('tells how long a completed order took, from placing it to its last delivery', () => {
+    const batchId = randomUUID();
+    const state = dashboardReducer(emptyDashboard, {
+      type: 'loaded',
+      workdayId,
+      orders: [
+        {
+          orderId: randomUUID(),
+          status: 'DELIVERED',
+          batchId,
+          placedAt: '2026-10-22T12:00:00.000Z',
+          deliveredAt: '2026-10-22T12:00:20.000Z',
+        },
+        {
+          orderId: randomUUID(),
+          status: 'DELIVERED',
+          batchId,
+          placedAt: '2026-10-22T12:00:00.000Z',
+          deliveredAt: '2026-10-22T12:00:38.000Z',
+        },
+      ],
+      purchases: [],
+    });
+
+    expect(orderHistory(state)).toEqual([
+      expect.objectContaining({ placedAt: '2026-10-22T12:00:00.000Z', tookMs: 38_000 }),
+    ]);
+  });
+
+  it('remembers when each dish was placed from its event', () => {
+    const orderId = randomUUID();
+    const event = placed(orderId, randomUUID());
+
+    expect(orderHistory(apply(loaded(), event))[0]?.placedAt).toBe(event.occurredAt);
   });
 });

@@ -13,7 +13,13 @@ import { Recipes } from './components/Recipes';
 import { Stats } from './components/Stats';
 import { config } from './config';
 import { useLiveEvents } from './live';
-import { dashboardReducer, delivered, emptyDashboard, inPreparation } from './state/dashboard';
+import {
+  dashboardReducer,
+  delivered,
+  emptyDashboard,
+  orderHistory,
+  inPreparation,
+} from './state/dashboard';
 
 export function App() {
   const [state, dispatch] = useReducer(dashboardReducer, emptyDashboard);
@@ -72,7 +78,7 @@ export function App() {
         <OrdersInPreparation orders={preparing} />
         <InventoryStrip inventory={inventory} />
         <Purchases purchases={state.purchases} />
-        <OrderHistory orders={history} />
+        <OrderHistory orders={orderHistory(state)} />
         <Recipes recipes={recipes} />
       </main>
       <AssistantPanel />

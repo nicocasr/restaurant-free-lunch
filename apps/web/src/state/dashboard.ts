@@ -13,6 +13,9 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 export interface OrderView {
   orderId: string;
   status: OrderStatus;
+  /** The order the manager placed this dish in: one click of the button. */
+  batchId?: string;
+  placedAt?: string;
   recipeName?: string;
   missing?: IngredientQuantity[];
   waitingSince?: string;
@@ -56,10 +59,15 @@ function advance(
 ): void {
   const current = orders.get(orderId) ?? { orderId, status: 'PLACED' as const };
   const moves = !orders.has(orderId) || rank(status) > rank(current.status);
+  // The batch never changes either, but OrderPlaced may arrive after a later event.
+  const batch = details.batchId !== undefined && { batchId: details.batchId };
+  const placed = details.placedAt !== undefined && { placedAt: details.placedAt };
   orders.set(orderId, {
     ...current,
     // The recipe never changes, so it is kept whatever the order of the events.
     ...(details.recipeName !== undefined && { recipeName: details.recipeName }),
+    ...batch,
+    ...placed,
     ...(moves && { ...details, status }),
   });
 }
@@ -81,7 +89,10 @@ function applyEvent(state: DashboardState, event: DomainEvent): DashboardState {
   const orders = new Map(state.orders);
   switch (event.type) {
     case 'OrderPlaced':
-      advance(orders, event.payload.orderId, 'PLACED');
+      advance(orders, event.payload.orderId, 'PLACED', {
+        placedAt: event.occurredAt,
+        ...(event.payload.batchId && { batchId: event.payload.batchId }),
+      });
       return { ...state, orders };
     case 'IngredientsRequested':
       advance(orders, event.payload.orderId, 'COOKING_REQUESTED', {
@@ -144,4 +155,42 @@ export function inPreparation(state: DashboardState): OrderView[] {
 /** The order history, the latest delivery first. */
 export function delivered(state: DashboardState): OrderView[] {
   return [...state.orders.values()].filter(({ status }) => status === 'DELIVERED').reverse();
+}
+
+/** One row of the order history: an order the manager placed, with one or more dishes. */
+export interface PlacedOrder {
+  batchId: string | undefined;
+  placedAt: string | undefined;
+  dishes: number;
+  delivered: number;
+  /** Dishes delivered per recipe, the most served first. */
+  served: { recipeName: string; count: number }[];
+  /** From placing the order to its last delivery; undefined while dishes are pending. */
+  tookMs: number | undefined;
+}
+
+/** "Historial de pedidos": one row per order the manager placed, the latest first. */
+export function orderHistory(state: DashboardState): PlacedOrder[] {
+  const batches = Map.groupBy(state.orders.values(), (order) => order.batchId);
+  return [...batches]
+    .map(([batchId, orders]): PlacedOrder => {
+      const done = orders.filter(({ status }) => status === 'DELIVERED');
+      const perRecipe = Map.groupBy(done, (order) => order.recipeName ?? 'Dish');
+      const placedAt = orders.find((order) => order.placedAt)?.placedAt;
+      const lastDelivery = Math.max(...done.map((order) => Date.parse(order.deliveredAt ?? '')));
+      return {
+        batchId,
+        placedAt,
+        dishes: orders.length,
+        delivered: done.length,
+        served: [...perRecipe]
+          .map(([recipeName, dishes]) => ({ recipeName, count: dishes.length }))
+          .sort((a, b) => b.count - a.count),
+        tookMs:
+          done.length === orders.length && placedAt && Number.isFinite(lastDelivery)
+            ? lastDelivery - Date.parse(placedAt)
+            : undefined,
+      };
+    })
+    .reverse();
 }
