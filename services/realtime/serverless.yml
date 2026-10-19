@@ -48,22 +48,28 @@ build:
 functions:
   connect:
     handler: src/entrypoints/lambda/handlers.connect
+    # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
+    reservedConcurrency: 10
     events:
       - websocket: $connect
   disconnect:
     handler: src/entrypoints/lambda/handlers.disconnect
+    # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
+    reservedConcurrency: 10
     events:
       - websocket: $disconnect
   queue:
     handler: src/entrypoints/lambda/handlers.queue
+    # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
+    reservedConcurrency: 10
     events:
       - sqs:
           arn: !GetAtt RealtimeQueue.Arn
           # Up to 10 events per push and no batching window: with a window, the last events of
           # a burst waited ~20 s for the next poll of a quiet queue (PLANNING §2).
           batchSize: 10
-          # The account allows 10 Lambdas at a time until the quota increase (PLANNING §2).
-          maximumConcurrency: 2
+          # As many Lambdas as the function reserves.
+          maximumConcurrency: 10
 
 resources:
   Resources:

@@ -53,15 +53,19 @@ build:
 functions:
   queue:
     handler: src/entrypoints/lambda/handlers.queue
+    # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
+    reservedConcurrency: 10
     events:
       - sqs:
           arn: !GetAtt KitchenQueue.Arn
           batchSize: 10
           functionResponseType: ReportBatchItemFailures
-          # The account allows 10 Lambdas at a time until the quota increase (PLANNING §2).
-          maximumConcurrency: 2
+          # As many Lambdas as the function reserves.
+          maximumConcurrency: 10
   http:
     handler: src/entrypoints/lambda/handlers.http
+    # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
+    reservedConcurrency: 10
     events:
       - httpApi: GET /recipes
 
