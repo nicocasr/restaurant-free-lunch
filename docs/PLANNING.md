@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.16 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.18 — Aprobado (18/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -24,6 +24,8 @@ Estado: **v1.16 — Aprobado (18/10/2026)**. Los cambios posteriores se registra
 | 1.14 | 18/10/2026 | §2 y §9: LocalStack fijado en 4.14.0 (las versiones nuevas exigen cuenta). §3.2: segundo topic `shortages.fifo` para `StockShortage`, filtros por `type` y colas sin `maxReceiveCount` |
 | 1.15 | 18/10/2026 | §3.1: pedidos agrupados por jornada en 10 particiones y contador de pedidos en curso por jornada |
 | 1.16 | 18/10/2026 | §2: API de consulta en cada servicio dueño para el dashboard; realtime envía eventos y el inventario se vuelve a consultar |
+| 1.17 | 18/10/2026 | §3.3: hallazgo de la prueba de usuario (compras duplicadas y lentas) y sus cuatro correcciones |
+| 1.18 | 18/10/2026 | §3.2: los contratos son lectores tolerantes (conservan los campos desconocidos) y regla de evolución de versiones |
 
 ---
 
@@ -222,6 +224,8 @@ sequenceDiagram
 
 **Contratos de eventos:** tipados y versionados en `packages/contracts` (sobre: `id`, `type`, `version`, `occurredAt`, `correlationId`, `payload`).
 
+**Lector tolerante (*tolerant reader*):** cada esquema **conserva los campos que no conoce** en lugar de descartarlos. Los servicios se despliegan por separado, así que un productor puede agregar un campo opcional antes de que un consumidor lo conozca, y un servicio intermedio (realtime) debe reenviarlo intacto. Se descubrió en una prueba de usuario: realtime, con el contrato anterior, eliminaba el `batchId` de `OrderPlaced` y el dashboard mezclaba dos pedidos en una fila. Regla de evolución: **agregar campos opcionales no cambia la versión**; quitar o cambiar el significado de un campo sí.
+
 ### 3.3 Escalabilidad y concurrencia (el punto crítico)
 
 | Riesgo | Mitigación |
@@ -252,6 +256,40 @@ Ventaja adicional: mientras el mensaje está oculto, la cola FIFO **no entrega o
 **Dos ajustes necesarios:**
 - **DLQ sin `maxReceiveCount` en la cola de market.** Con reintentos indefinidos, SQS movería a la DLQ una compra que solo está esperando a la plaza. El código envía a la DLQ únicamente los mensajes que fallan la validación zod.
 - **Segundos enteros.** `ChangeMessageVisibility` acepta segundos, no milisegundos: la espera se redondea hacia arriba al segundo. El jitter sigue repartiendo los reintentos, con resolución de 1 s.
+
+#### Hallazgo en la prueba de usuario: compras duplicadas y lentas (v1.17)
+
+Con 50 platos, los pedidos quedaban mucho tiempo en `WAITING_INGREDIENTS` y la bodega terminó con **83 cebollas de sobra**: se pidió comprar 48 y se compraron **158**.
+
+**Causa:**
+- Una compra grande (97 papas ≈ 40 llamadas de ~0,3 s, más esperas por los `0`) **superaba los 30 s de visibilidad** del mensaje. SQS daba por muerto al comprador y entregaba el mismo faltante a un **segundo comprador**.
+- Una cola FIFO puede entregar **varios mensajes del mismo grupo en un lote**, y el consumidor los procesaba en paralelo.
+- Cada comprador **sobrescribía** el progreso con su propio total, así que el registro (54) no reflejaba las ventas reales (158).
+
+Los tests no lo detectaban porque usaban compras pequeñas, que nunca llegaban a los 30 s.
+
+**Correcciones:**
+
+| # | Cambio | Efecto |
+|---|--------|--------|
+| 1 | **Compras por tramos:** cada entrega del mensaje compra como máximo ~10 s y devuelve el resto a la cola (espera 0); la siguiente retoma el progreso guardado | Ninguna entrega supera la visibilidad: no hay segundo comprador |
+| 2 | **El consumidor respeta los grupos FIFO:** grupos distintos en paralelo, mensajes del mismo grupo en orden | Una compra a la vez por ingrediente, de verdad |
+| 3 | **Progreso por suma atómica:** cada venta **suma** sus unidades (`ADD`) en la misma escritura que la registra, en vez de sobrescribir un total | Lo comprado es siempre la suma de las ventas, aunque hubiera dos compradores |
+| 4 | **Rondas de llamadas en paralelo:** hasta 5 llamadas a la vez según lo que falte (`⌈faltante / 2,5⌉`), menos al acercarse al final | Compras ~5 veces más rápidas, con sobras acotadas a la última ronda |
+
+**Segunda medición: los cuellos de botella que aparecieron después**
+
+| Hallazgo | Corrección |
+|----------|------------|
+| Un proceso que se apagaba durante una espera larga (*long polling*) recibía un mensaje que ya no iba a procesar; quedaba oculto 30 s. Cancelar la petición no sirve: SQS igual se lo entrega a la conexión abandonada | Al apagarse, cada trabajador **termina el mensaje en curso** antes de salir; espera larga de 5 s y 30 s de margen de apagado (`stop_grace_period`) |
+| LocalStack **no bloquea el grupo FIFO** cuando se reciben varios mensajes en un lote, aunque AWS sí | Las colas FIFO se leen con **varios trabajadores que toman un mensaje cada uno**: la cola misma garantiza una compra a la vez por ingrediente (verificado en LocalStack) |
+| Warehouse acumulaba 40 mensajes en cola: recibía **un evento por llamada a la plaza** y reevaluaba los **10 ingredientes en serie** por cada uno | Market publica **un evento por ronda** (93 → 27 eventos); warehouse evalúa **solo** el ingrediente comprado y los que necesita algún pedido en espera, **en paralelo** |
+| Errores transitorios reintentados hasta 30 s | Tope de 10 s, como la plaza |
+| Consultas y escrituras que casi nunca servían: faltantes y reservas pendientes buscados en cada evaluación, y `OrderPlaced` reescrito en orders | Solo se buscan cuando pueden existir (unidades en camino; compra reentregada como duplicado). `OrderPlaced` no se escribe: el pedido ya se guardó al crearse |
+
+**Resultado con 50 platos, contra la plaza real:** sobras de 83 cebollas → **0 a 2**; errores 192 → **0**; tiempo total 165 s → **62 s**.
+El tiempo total quedó limitado por **LocalStack** (un proceso de Python al 125-145 % de CPU, mientras los servicios esperaban por debajo del 25 %).
+La medición de velocidad que vale es la de AWS con Artillery (§6), donde DynamoDB, SNS y SQS escalan solos.
 
 ### 3.4 Estructura hexagonal de cada servicio
 
