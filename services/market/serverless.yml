@@ -1,0 +1,124 @@
+# Market in AWS (PLANNING §2): its table, its queue subscribed to the events it consumes,
+# and its Lambdas. The topics and the HTTP API come from the shared stack (infra/aws).
+service: alegra-lunch-market
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs24.x
+  # Graviton: about 20% cheaper per millisecond than x86.
+  architecture: arm64
+  region: us-east-2
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  # A purchase round lasts up to 10 s plus a 5 s call to the farmers market (PLANNING §3.3).
+  timeout: 30
+  logRetentionInDays: 7
+  httpApi:
+    id: ${cf:alegra-lunch-infra-${sls:stage}.HttpApiId}
+  environment:
+    NODE_OPTIONS: --enable-source-maps
+    TABLE_NAME: !Ref MarketTable
+    DLQ_URL: !Ref MarketDlq
+    EVENTS_TOPIC_ARN: ${cf:alegra-lunch-infra-${sls:stage}.EventsTopicArn}
+    SHORTAGES_TOPIC_ARN: ${cf:alegra-lunch-infra-${sls:stage}.ShortagesTopicArn}
+    FARMERS_MARKET_URL: https://recruitment.alegra.com/api/farmers-market
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:ConditionCheckItem
+          Resource: !GetAtt MarketTable.Arn
+        - Effect: Allow
+          Action: sns:Publish
+          Resource:
+            - ${cf:alegra-lunch-infra-${sls:stage}.EventsTopicArn}
+            - ${cf:alegra-lunch-infra-${sls:stage}.ShortagesTopicArn}
+        - Effect: Allow
+          Action: sqs:ChangeMessageVisibility
+          Resource: !GetAtt MarketQueue.Arn
+        - Effect: Allow
+          Action: sqs:SendMessage
+          Resource: !GetAtt MarketDlq.Arn
+
+build:
+  esbuild:
+    bundle: true
+    sourcemap: true
+
+functions:
+  queue:
+    handler: src/entrypoints/lambda/handlers.queue
+    events:
+      - sqs:
+          arn: !GetAtt MarketQueue.Arn
+          # One message per invocation: the handler runs a batch in parallel, and two
+          # shortages of the same ingredient at once would buy twice (PLANNING §3.3).
+          batchSize: 1
+          functionResponseType: ReportBatchItemFailures
+          # The account allows 10 Lambdas at a time until the quota increase (PLANNING §2).
+          maximumConcurrency: 2
+  http:
+    handler: src/entrypoints/lambda/handlers.http
+    events:
+      - httpApi: GET /purchases
+
+resources:
+  Resources:
+    MarketTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: alegra-lunch-${sls:stage}-purchases
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+
+    # Only invalid messages land here, sent by the handler; failures retry on the queue (§3.8).
+    MarketDlq:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: alegra-lunch-${sls:stage}-market-dlq.fifo
+        FifoQueue: true
+        MessageRetentionPeriod: 1209600
+
+    # Six times the Lambda timeout, as AWS recommends for queues that trigger a Lambda.
+    MarketQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: alegra-lunch-${sls:stage}-market.fifo
+        FifoQueue: true
+        VisibilityTimeout: 180
+
+    MarketQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [!Ref MarketQueue]
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal: { Service: sns.amazonaws.com }
+              Action: sqs:SendMessage
+              Resource: !GetAtt MarketQueue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: ${cf:alegra-lunch-infra-${sls:stage}.ShortagesTopicArn}
+
+    MarketSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${cf:alegra-lunch-infra-${sls:stage}.ShortagesTopicArn}
+        Protocol: sqs
+        Endpoint: !GetAtt MarketQueue.Arn
+        RawMessageDelivery: true
+        FilterPolicy:
+          type: [StockShortage]
