@@ -99,5 +99,14 @@ services:
       DLQ_URL: http://localstack:4566/000000000000/realtime-dlq
       PORT: '3004'
 
+  # The dashboard: open http://localhost:8080
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    ports:
+      - '8080:80'
+    depends_on:
+      - orders
+      - realtime
+
 volumes:
   localstack-data:
