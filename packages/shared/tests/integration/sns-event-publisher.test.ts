@@ -18,7 +18,8 @@ import {
 import { SnsEventPublisher } from '../../src/infrastructure/sns-event-publisher';
 
 const sns = new SNSClient({});
-const sqs = new SQSClient({});
+// LocalStack answers queue URLs on its own domain: keep calling the configured endpoint.
+const sqs = new SQSClient({ useQueueUrlAsEndpoint: false });
 
 afterAll(() => {
   sns.destroy();

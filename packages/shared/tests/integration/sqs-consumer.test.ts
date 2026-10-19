@@ -13,7 +13,8 @@ import {
 
 import { SqsConsumer, type MessageHandler } from '../../src/infrastructure/sqs-consumer';
 
-const sqs = new SQSClient({});
+// LocalStack answers queue URLs on its own domain: keep calling the configured endpoint.
+const sqs = new SQSClient({ useQueueUrlAsEndpoint: false });
 const logger = { info: jest.fn(), warn: jest.fn(), error: jest.fn() };
 
 afterAll(() => {
