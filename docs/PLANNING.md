@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.19 — Aprobado (19/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.20 — Aprobado (19/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -27,6 +27,7 @@ Estado: **v1.19 — Aprobado (19/10/2026)**. Los cambios posteriores se registra
 | 1.17 | 18/10/2026 | §3.3: hallazgo de la prueba de usuario (compras duplicadas y lentas) y sus cuatro correcciones |
 | 1.18 | 18/10/2026 | §3.2: los contratos son lectores tolerantes (conservan los campos desconocidos) y regla de evolución de versiones |
 | 1.19 | 19/10/2026 | §2: cuenta de AWS con el plan gratuito y medidas para cuidar los créditos |
+| 1.20 | 19/10/2026 | §2: región `us-east-2` (la organización de la cuenta bloquea las demás); la alerta de Budgets excluye los créditos; *reserved concurrency* tras ampliar la cuota de Lambda |
 
 ---
 
@@ -75,7 +76,7 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 | Testing | Jest (+ ts-jest) con TDD | Red → Green → Refactor en dominio y casos de uso |
 | IaC / despliegue | Serverless Framework **v4** | Mencionado explícitamente en el reto; versión con soporte activo |
 | Cuenta de AWS | Cuenta nueva con el **plan gratuito** (`FREE`, US$100 en créditos hasta el 19/04/2027) | El plan gratuito **no puede generar facturas**: si los créditos se agotaran, la cuenta se pausa. Es el "free tier" de AWS para cuentas nuevas desde julio de 2025. Una cuenta antigua solo tendría la capa siempre gratis, que obliga a elegir entre costo cero y escalabilidad (DynamoDB provisionado se frenaría con carga) |
-| Cuidado de los créditos | Sin VPC ni NAT Gateway; DynamoDB on-demand sin PITR ni streams; logs con retención de 7 días; *reserved concurrency* por Lambda; *throttling* en API Gateway; sin X-Ray; secretos en SSM estándar; una sola región (`us-east-1`); alerta de AWS Budgets si el consumo proyectado supera US$10 al mes | Que los créditos duren y que un abuso no pueda agotarlos (eso pausaría la cuenta durante la evaluación). Costo conocido y aceptado: las Lambdas que leen SQS consultan las colas aunque no haya mensajes (~US$1,30 al mes en créditos). Consumo estimado de la evaluación: US$5-15 de US$100 |
+| Cuidado de los créditos | Sin VPC ni NAT Gateway; DynamoDB on-demand sin PITR ni streams; logs con retención de 7 días; *reserved concurrency* por Lambda (la cuenta nueva solo permite 10 ejecuciones a la vez; mientras AWS aprueba la ampliación a 1000, cada cola limita las Lambdas que dispara con `maximumConcurrency`); *throttling* en API Gateway; sin X-Ray; secretos en SSM estándar; una sola región (`us-east-2`: la organización de la cuenta bloquea las demás); alerta de AWS Budgets si el consumo proyectado supera US$10 al mes, **sin descontar los créditos** (si los incluyera, la factura neta sería US$0 y nunca avisaría) | Que los créditos duren y que un abuso no pueda agotarlos (eso pausaría la cuenta durante la evaluación). Costo conocido y aceptado: las Lambdas que leen SQS consultan las colas aunque no haya mensajes (~US$1,30 al mes en créditos). Consumo estimado de la evaluación: US$5-15 de US$100 |
 | Emulación local | LocalStack **4.14.0** (SQS, SNS, DynamoDB), versión fijada | Mismos adaptadores AWS en local y en la nube. Desde la 2026.03.0 LocalStack exige cuenta y *auth token* incluso en su plan gratuito; la 4.14.0 (26/02/2026) es la última edición *community* que arranca sin token, así que los reviewers corren `docker compose up` sin registrarse. Riesgo aceptado: ya no recibe actualizaciones (ver §9) |
 | Tiempo real | WebSockets (API Gateway WebSocket) | El servidor empuja cada cambio al instante |
 | Frontend | React + Vite | — |
