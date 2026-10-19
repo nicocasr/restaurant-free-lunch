@@ -122,4 +122,10 @@ resources:
         RawMessageDelivery: true
         FilterPolicy:
           type:
-            [OrderPlaced, IngredientsRequested, OrderWaitingIngredients, IngredientsReserved, OrderDelivered]
+            [
+              OrderPlaced,
+              IngredientsRequested,
+              OrderWaitingIngredients,
+              IngredientsReserved,
+              OrderDelivered,
+            ]
