@@ -229,7 +229,7 @@ describe('SqsConsumer on a FIFO queue', () => {
 
     const running = new Map<string, number>();
     let maxOnionsAtOnce = 0;
-    let potatoOverlappedOnions = false;
+    let groupsOverlapped = false;
     const handledOnions: string[] = [];
     const controller = new AbortController();
     const consumer = new SqsConsumer({
@@ -243,8 +243,10 @@ describe('SqsConsumer on a FIFO queue', () => {
         const { ingredient } = event.payload;
         running.set(ingredient, (running.get(ingredient) ?? 0) + 1);
         maxOnionsAtOnce = Math.max(maxOnionsAtOnce, running.get('onion') ?? 0);
-        if (ingredient === 'potato' && (running.get('onion') ?? 0) > 0) {
-          potatoOverlappedOnions = true;
+        // Either group may be taken first: what matters is that both were running at once.
+        const other = ingredient === 'onion' ? 'potato' : 'onion';
+        if ((running.get(other) ?? 0) > 0) {
+          groupsOverlapped = true;
         }
         await sleep(300);
         if (ingredient === 'onion') handledOnions.push(event.id);
@@ -262,6 +264,6 @@ describe('SqsConsumer on a FIFO queue', () => {
 
     expect(maxOnionsAtOnce).toBe(1);
     expect(handledOnions).toEqual(onions.map(({ id }) => id));
-    expect(potatoOverlappedOnions).toBe(true);
+    expect(groupsOverlapped).toBe(true);
   });
 });
