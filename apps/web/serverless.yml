@@ -1,0 +1,81 @@
+# The dashboard in AWS (PLANNING §2): static files in a private S3 bucket, served over HTTPS
+# by CloudFront. `npm run deploy:aws -w @alegra-lunch/web` builds it with the API URLs
+# and uploads it here.
+service: alegra-lunch-web
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  region: us-east-2
+  stage: ${opt:stage, 'dev'}
+
+resources:
+  Resources:
+    # Private: only CloudFront reads it, through the origin access control below.
+    WebBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+
+    WebOriginAccessControl:
+      Type: AWS::CloudFront::OriginAccessControl
+      Properties:
+        OriginAccessControlConfig:
+          Name: alegra-lunch-${sls:stage}-web
+          OriginAccessControlOriginType: s3
+          SigningBehavior: always
+          SigningProtocol: sigv4
+
+    WebDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Enabled: true
+          Comment: alegra-lunch-${sls:stage} dashboard
+          DefaultRootObject: index.html
+          HttpVersion: http2and3
+          # North America and Europe only: the cheapest edge locations.
+          PriceClass: PriceClass_100
+          Origins:
+            - Id: web
+              DomainName: !GetAtt WebBucket.RegionalDomainName
+              OriginAccessControlId: !GetAtt WebOriginAccessControl.Id
+              S3OriginConfig:
+                OriginAccessIdentity: ''
+          DefaultCacheBehavior:
+            TargetOriginId: web
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD]
+            Compress: true
+            # AWS managed policy CachingOptimized.
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+    WebBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref WebBucket
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal: { Service: cloudfront.amazonaws.com }
+              Action: s3:GetObject
+              Resource: !Join ['', [!GetAtt WebBucket.Arn, '/*']]
+              Condition:
+                StringEquals:
+                  AWS:SourceArn:
+                    !Join [
+                      '',
+                      ['arn:aws:cloudfront::${aws:accountId}:distribution/', !Ref WebDistribution],
+                    ]
+
+  Outputs:
+    WebBucketName:
+      Value: !Ref WebBucket
+    WebDistributionId:
+      Value: !Ref WebDistribution
+    WebUrl:
+      Value: !Join ['', ['https://', !GetAtt WebDistribution.DomainName]]

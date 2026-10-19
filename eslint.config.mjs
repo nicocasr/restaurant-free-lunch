@@ -29,6 +29,7 @@ export default defineConfig(
   {
     files: ['**/*.mjs'],
     extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: { globals: { process: 'readonly', console: 'readonly' } },
   },
   prettier,
 );
