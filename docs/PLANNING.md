@@ -3,7 +3,7 @@
 > Documento escrito **antes de la primera línea de código**. Registra las decisiones,
 > el diseño y el plan de trabajo. Cada decisión relevante tendrá además su ADR en `docs/adr/`.
 
-Estado: **v1.20 — Aprobado (19/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
+Estado: **v1.21 — Aprobado (19/10/2026)**. Los cambios posteriores se registran como nuevas versiones de este documento o como ADRs.
 
 | Versión | Fecha | Cambio |
 |---------|-------|--------|
@@ -28,6 +28,7 @@ Estado: **v1.20 — Aprobado (19/10/2026)**. Los cambios posteriores se registra
 | 1.18 | 18/10/2026 | §3.2: los contratos son lectores tolerantes (conservan los campos desconocidos) y regla de evolución de versiones |
 | 1.19 | 19/10/2026 | §2: cuenta de AWS con el plan gratuito y medidas para cuidar los créditos |
 | 1.20 | 19/10/2026 | §2: región `us-east-2` (la organización de la cuenta bloquea las demás); la alerta de Budgets excluye los créditos; *reserved concurrency* tras ampliar la cuota de Lambda |
+| 1.21 | 19/10/2026 | §2: en AWS, realtime envía paquetes de hasta 10 eventos sin ventana de agrupación (con ventana, los últimos eventos esperaban ~20 s) |
 
 ---
 
@@ -95,7 +96,7 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 | Commits | Conventional Commits; `test:` (rojo) y `feat:` (verde) por separado | El ciclo TDD queda visible en el historial de Git |
 | Validación | zod (librería, no framework) | Valida en tiempo de ejecución los eventos, los requests HTTP y las variables de entorno (ver §3.8) |
 | Inicio de jornada | **Jornadas separadas**: el botón "Nueva jornada" solo se habilita sin pedidos en curso; reinicia la bodega a 5 unidades de cada ingrediente y el historial se conserva agrupado por jornada (ver §3.7) | La persistencia sobrevive reinicios del servidor; el "inicia con 5" aplica a la jornada, no al proceso. El historial por jornada permite comparar jornadas (útil para el asistente IA) |
-| Envío al dashboard | realtime **agrupa** los cambios y envía un paquete cada ~500 ms | Para el ojo humano sigue siendo tiempo real; evita saturar el navegador y la cuota de mensajes de API Gateway |
+| Envío al dashboard | realtime **agrupa** los cambios y envía un paquete cada ~500 ms. En AWS, la Lambda lee la cola en lotes de hasta 10 eventos **sin ventana de agrupación**: con ventana, los últimos eventos de una ráfaga esperaban ~20 s la siguiente consulta a la cola | Para el ojo humano sigue siendo tiempo real; evita saturar el navegador y la cuota de mensajes de API Gateway. En AWS se prefiere la latencia: un pedido de 1000 platos son ~800 envíos, centavos frente al millón de invocaciones gratis al mes |
 | Datos del dashboard | Al abrirse, el dashboard **carga** los datos con una API de consulta **en cada servicio dueño**: `GET /orders` (orders), `GET /inventory` (warehouse), `GET /purchases` (market), `GET /recipes` (kitchen). Luego aplica los **eventos** que llegan por WebSocket: pedidos y compras se actualizan con el evento; el inventario se vuelve a consultar cuando llega un evento que lo cambia (como mucho una vez por paquete) | Respeta que cada servicio es dueño de sus datos (§3.1). Los eventos no llevan el stock completo, y meterlo en ellos acoplaría realtime con warehouse |
 | Tamaño del pedido | Límite máximo **configurable** (variable de entorno) y validado con zod | Protege el sistema de pedidos absurdos |
 | Plaza sin stock (`0`) | Reintentos **indefinidos** con *backoff* exponencial, tope de **10 s**; ningún pedido se pierde | La plaza eventualmente vende; el pedido espera, nunca falla |
