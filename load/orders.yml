@@ -1,0 +1,29 @@
+# Load test (PLANNING §6): many managers pressing "Order dishes" at the same time.
+# 20 batches of 10 dishes in 10 seconds = 200 dishes. Run it with:
+#   npm run load                                   (docker compose, http://localhost:3000)
+#   npm run load -- --target <HttpApiUrl>          (AWS)
+# It measures the order button under high demand; the dashboard (or `npm run e2e`) shows how
+# fast the kitchen drains the dishes afterwards.
+config:
+  target: http://localhost:3000
+  processor: ./processor.cjs
+  phases:
+    - name: rush
+      duration: 10
+      arrivalRate: 2
+  plugins:
+    # Fails the run when a batch is not accepted with a 202.
+    expect: {}
+  # No response time threshold: locally LocalStack saturates the CPU and sets the pace, so
+  # only the AWS numbers say how fast the order button is (PLANNING §3.3).
+
+scenarios:
+  - name: Order a batch of dishes
+    flow:
+      - post:
+          url: /orders
+          beforeRequest: setIdempotencyKey
+          json:
+            quantity: 10
+          expect:
+            - statusCode: 202
