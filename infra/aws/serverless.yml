@@ -1,0 +1,84 @@
+# Shared AWS infrastructure (PLANNING §2 and §3.2): the event topics, the HTTP API every
+# service adds its routes to, and the budget alert. Each service stack owns its own table,
+# queue and functions, and reads these outputs through serverless-compose.
+service: alegra-lunch-infra
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  # The account's organization only allows us-east-2 (PLANNING §2).
+  region: us-east-2
+  stage: ${opt:stage, 'dev'}
+
+resources:
+  Resources:
+    # Every event except StockShortage; each queue filters the types it consumes.
+    EventsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: alegra-lunch-${sls:stage}-events
+
+    # StockShortage only, grouped by ingredient: one purchase at a time per ingredient.
+    ShortagesTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: alegra-lunch-${sls:stage}-shortages.fifo
+        FifoTopic: true
+
+    # One URL for the dashboard: orders, warehouse, kitchen and market add their routes.
+    HttpApi:
+      Type: AWS::ApiGatewayV2::Api
+      Properties:
+        Name: alegra-lunch-${sls:stage}
+        ProtocolType: HTTP
+        CorsConfiguration:
+          AllowOrigins: ['*']
+          AllowMethods: [GET, POST, OPTIONS]
+          AllowHeaders: [content-type]
+
+    # Throttling keeps an abuse from burning the credits: requests above it get a 429.
+    # A batch of a thousand dishes is a single POST /orders, so the dashboard stays far below.
+    HttpApiStage:
+      Type: AWS::ApiGatewayV2::Stage
+      Properties:
+        ApiId: !Ref HttpApi
+        StageName: $default
+        AutoDeploy: true
+        DefaultRouteSettings:
+          ThrottlingRateLimit: 50
+          ThrottlingBurstLimit: 100
+
+    # Emails when the month is projected to cost more than US$10 of credits. Credits are
+    # excluded on purpose: they cover the whole bill, so including them would never alert.
+    CreditsBudget:
+      Type: AWS::Budgets::Budget
+      Properties:
+        Budget:
+          BudgetName: alegra-lunch-${sls:stage}-monthly
+          BudgetType: COST
+          TimeUnit: MONTHLY
+          BudgetLimit:
+            Amount: 10
+            Unit: USD
+          CostTypes:
+            IncludeCredit: false
+            IncludeRefund: false
+        NotificationsWithSubscribers:
+          - Notification:
+              NotificationType: FORECASTED
+              ComparisonOperator: GREATER_THAN
+              Threshold: 100
+              ThresholdType: PERCENTAGE
+            Subscribers:
+              - SubscriptionType: EMAIL
+                Address: ${env:BUDGET_EMAIL}
+
+  Outputs:
+    EventsTopicArn:
+      Value: !Ref EventsTopic
+    ShortagesTopicArn:
+      Value: !Ref ShortagesTopic
+    HttpApiId:
+      Value: !Ref HttpApi
+    HttpApiUrl:
+      Value: !GetAtt HttpApi.ApiEndpoint
