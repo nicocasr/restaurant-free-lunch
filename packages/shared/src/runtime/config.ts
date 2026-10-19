@@ -8,6 +8,14 @@ export const messagingConfig = {
   SHORTAGES_TOPIC_ARN: z.string().startsWith('arn:aws:sns:').endsWith('.fifo'),
 };
 
+/** Variables of a service running in Lambda: its triggers come from the event source mapping. */
+export const lambdaConfig = {
+  DLQ_URL: z.url(),
+  EVENTS_TOPIC_ARN: messagingConfig.EVENTS_TOPIC_ARN,
+  SHORTAGES_TOPIC_ARN: messagingConfig.SHORTAGES_TOPIC_ARN,
+  CORS_ORIGIN: z.string().min(1).default('*'),
+};
+
 /** Variables of the HTTP API every service serves (PLANNING §2). */
 export const httpConfig = {
   PORT: z.coerce.number().int().positive(),

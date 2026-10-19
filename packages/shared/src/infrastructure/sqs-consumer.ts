@@ -1,4 +1,3 @@
-import { parseEvent, type DomainEvent } from '@alegra-lunch/contracts';
 import {
   ChangeMessageVisibilityCommand,
   DeleteMessageCommand,
@@ -8,21 +7,14 @@ import {
   type SQSClient,
 } from '@aws-sdk/client-sqs';
 
-/** What a handler may ask for: nothing (done), or to see the message again later. */
-export type MessageHandler = (
-  event: DomainEvent,
-) => Promise<{ retryAfterSeconds: number } | undefined>;
+import { handleMessage, type MessageHandler } from '../messaging/message-outcome';
+
+export type { MessageHandler } from '../messaging/message-outcome';
 
 interface Logger {
   info: (message: string, fields?: Record<string, unknown>) => void;
   error: (message: string, fields?: Record<string, unknown>) => void;
 }
-
-/**
- * A failed message comes back after 1 s, 2 s, 4 s… up to this, instead of the full timeout.
- * Like the market retries, it stays at 10 s: a transient error should not hold an order long.
- */
-const MAX_FAILURE_DELAY_SECONDS = 10;
 
 /**
  * Consumes a service queue (PLANNING §3.2 and §3.3). For each message:
@@ -99,35 +91,29 @@ export class SqsConsumer {
   }
 
   private async process(message: Message): Promise<void> {
-    let event: DomainEvent;
-    try {
-      event = parseEvent(JSON.parse(message.Body ?? ''));
-    } catch (error) {
-      this.logger.error('Invalid message moved to the DLQ', {
-        error,
-        messageId: message.MessageId,
-      });
-      await this.moveToDlq(message);
-      return;
-    }
-
-    try {
-      const result = await this.handle(event);
-      if (result) {
-        await this.hide(message, result.retryAfterSeconds);
-      } else {
+    const receives = Number(message.Attributes?.ApproximateReceiveCount ?? 1);
+    const outcome = await handleMessage(message.Body ?? '', receives, this.handle);
+    switch (outcome.kind) {
+      case 'done':
         await this.delete(message);
-      }
-    } catch (error) {
-      const receives = Number(message.Attributes?.ApproximateReceiveCount ?? 1);
-      const delay = Math.min(MAX_FAILURE_DELAY_SECONDS, 2 ** (receives - 1));
-      this.logger.error('Message failed, it will be retried', {
-        error,
-        type: event.type,
-        correlationId: event.correlationId,
-        retryInSeconds: delay,
-      });
-      await this.hide(message, delay);
+        return;
+      case 'retry':
+        if (outcome.error) {
+          this.logger.error('Message failed, it will be retried', {
+            error: outcome.error,
+            type: outcome.event.type,
+            correlationId: outcome.event.correlationId,
+            retryInSeconds: outcome.seconds,
+          });
+        }
+        await this.hide(message, outcome.seconds);
+        return;
+      case 'invalid':
+        this.logger.error('Invalid message moved to the DLQ', {
+          error: outcome.error,
+          messageId: message.MessageId,
+        });
+        await this.moveToDlq(message);
     }
   }
 

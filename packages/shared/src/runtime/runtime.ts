@@ -6,8 +6,13 @@ import { SQSClient } from '@aws-sdk/client-sqs';
 import { SnsEventPublisher } from '../infrastructure/sns-event-publisher';
 import { SqsConsumer, type MessageHandler } from '../infrastructure/sqs-consumer';
 import { nodeListener } from '../http/node-listener';
+import { createHttpHandler } from '../lambda/http-lambda-handler';
+import { createSqsHandler } from '../lambda/sqs-lambda-handler';
 import { createRouter, type Route } from '../http/router';
 import type { Logger } from '../logging/logger';
+
+/** 16 KB is plenty for the manager's requests and refuses abusive bodies early. */
+const MAX_BODY_BYTES = 16 * 1024;
 
 /**
  * Aborts when the process is asked to stop: SIGTERM from Docker or Lambda, SIGINT from Ctrl+C.
@@ -50,6 +55,31 @@ export function createConsumer(
   });
 }
 
+/** The Lambda handler of a service queue (PLANNING §3.3). */
+export function createLambdaQueueHandler(
+  config: { DLQ_URL: string },
+  handle: MessageHandler,
+  logger: Logger,
+) {
+  return createSqsHandler({ client: new SQSClient({}), dlqUrl: config.DLQ_URL, handle, logger });
+}
+
+/** The Lambda handler of the HTTP API of a service, behind API Gateway. */
+export function createLambdaHttpHandler(options: {
+  routes: readonly Route[];
+  corsOrigin: string;
+  logger: Logger;
+  statusFor?: (error: Error) => number | undefined;
+}) {
+  const router = createRouter({
+    routes: options.routes,
+    corsOrigin: options.corsOrigin,
+    logger: options.logger,
+    ...(options.statusFor && { statusFor: options.statusFor }),
+  });
+  return createHttpHandler(router, { maxBodyBytes: MAX_BODY_BYTES });
+}
+
 /** Serves the routes of a service with node:http until it shuts down (PLANNING §3.4). */
 export async function serveHttp(options: {
   routes: readonly Route[];
@@ -65,8 +95,7 @@ export async function serveHttp(options: {
     logger: options.logger,
     ...(options.statusFor && { statusFor: options.statusFor }),
   });
-  // 16 KB is plenty for the manager's requests and refuses abusive bodies early.
-  const server = createServer(nodeListener(router, { maxBodyBytes: 16 * 1024 }));
+  const server = createServer(nodeListener(router, { maxBodyBytes: MAX_BODY_BYTES }));
   options.signal.addEventListener('abort', () => server.close());
   await new Promise<void>((resolve) => server.listen(options.port, resolve));
   options.logger.info('HTTP API is listening', { port: options.port });

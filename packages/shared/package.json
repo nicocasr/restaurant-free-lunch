@@ -21,5 +21,8 @@
     "@aws-sdk/client-sns": "^3.1146.0",
     "@aws-sdk/client-sqs": "^3.1146.0",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.164"
   }
 }
