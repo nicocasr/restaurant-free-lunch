@@ -2,7 +2,8 @@
 
 How Free Lunch Day is built and why it stays correct when thousands of dishes are ordered at
 once. The reasons behind each decision, and the alternatives that were discarded, are in
-[PLANNING.md](PLANNING.md) (§2 and §3).
+[PLANNING.md](PLANNING.md), and how the design evolved, with what each test found, is in
+[DEVLOG.md](DEVLOG.md).
 
 ## Services
 
@@ -184,6 +185,11 @@ state must survive restarts. A **workday** reconciles both: "New workday" (`POST
 resets the warehouse to 5, only when no order is in progress, and every order and purchase
 belongs to one. History is never deleted. The first workday is created automatically.
 
+`WorkdayStarted` may reach the warehouse after an order of the new workday, since SQS does not
+guarantee order. So the warehouse only serves orders of a workday it has already started: an
+earlier one fails and is retried, and a late purchase of a previous workday never enters the new
+stock.
+
 ## Two runtimes
 
 |                 | docker compose                         | AWS                                      |
@@ -211,13 +217,7 @@ NAT gateway: an abuse cannot turn into a bill.
 
 ## What testing found
 
-User tests against the real farmers market found problems that unit tests could not:
-
-- **Overbuying.** A large purchase outlived the visibility timeout of its message, so SQS handed
-  it to a second buyer, and each buyer overwrote the progress. 158 onions were bought for 48
-  needed. Rounds bounded to ~10 s, atomic progress and one message per FIFO worker brought the
-  leftovers to 0-2 units.
-- **A dropped field.** realtime, still on an older contract, stripped a new optional field and
-  the dashboard merged two batches. That is why the schemas are tolerant readers.
-- **Late events in AWS.** With a batching window, the last events of a burst waited ~20 s for the
-  next poll of the realtime queue. Without the window they reach the dashboard in ~0.2 s.
+User tests against the real farmers market found problems that unit tests could not, among
+them an overbuy of 158 onions for 48 needed, a field dropped by a service on an older contract,
+and events reaching the AWS dashboard 20 s late. Each finding, its cause and its fix are in the
+[DEVLOG](DEVLOG.md).

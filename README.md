@@ -10,8 +10,9 @@ it all in real time.
 
 Built for the Alegra backend challenge: Node.js and TypeScript microservices without Express,
 Nest or similar frameworks, each with its own Dockerfile, deployed serverless on AWS at no cost.
-How it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); every decision and its
-reason is in [docs/PLANNING.md](docs/PLANNING.md).
+How it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), every decision and its
+reason in [docs/PLANNING.md](docs/PLANNING.md), and how it evolved, with what each test found,
+in [docs/DEVLOG.md](docs/DEVLOG.md).
 
 ## How it works
 
@@ -135,5 +136,6 @@ infra/aws/           shared AWS stack
 scripts/             AWS deploy and end-to-end check
 load/                Artillery load test
 docs/ARCHITECTURE.md how it is built and why it stays correct under load
-docs/PLANNING.md     decisions, alternatives and plan
+docs/PLANNING.md     goal, decisions, alternatives and plan
+docs/DEVLOG.md       how it evolved: each finding, its cause and its fix
 ```
