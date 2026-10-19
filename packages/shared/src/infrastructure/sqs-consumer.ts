@@ -18,8 +18,11 @@ interface Logger {
   error: (message: string, fields?: Record<string, unknown>) => void;
 }
 
-/** A failed message comes back after 1 s, 2 s, 4 s… up to this, instead of the full timeout. */
-const MAX_FAILURE_DELAY_SECONDS = 30;
+/**
+ * A failed message comes back after 1 s, 2 s, 4 s… up to this, instead of the full timeout.
+ * Like the market retries, it stays at 10 s: a transient error should not hold an order long.
+ */
+const MAX_FAILURE_DELAY_SECONDS = 10;
 
 /**
  * Consumes a service queue (PLANNING §3.2 and §3.3). For each message:
@@ -27,6 +30,11 @@ const MAX_FAILURE_DELAY_SECONDS = 30;
  * - the handler asks to retry later (the market had nothing to sell): hidden for that long;
  * - the handler fails (a transient error): hidden for a short, growing delay, then retried;
  * - invalid (not JSON or breaks the contract): moved to the DLQ, since retrying never helps.
+ *
+ * A standard queue is read in batches of 10, all handled at once. A FIFO queue is read by
+ * several workers that take one message each: the queue never hands over a message of a group
+ * while another of the same group is in flight, so there is one purchase per ingredient at a
+ * time, and different ingredients are bought in parallel by different workers.
  */
 export class SqsConsumer {
   private readonly client: SQSClient;
@@ -35,6 +43,8 @@ export class SqsConsumer {
   private readonly handle: MessageHandler;
   private readonly logger: Logger;
   private readonly waitTimeSeconds: number;
+  private readonly fifo: boolean;
+  private readonly workers: number;
 
   constructor(deps: {
     client: SQSClient;
@@ -43,32 +53,43 @@ export class SqsConsumer {
     handle: MessageHandler;
     logger: Logger;
     waitTimeSeconds?: number;
+    workers?: number;
   }) {
     this.client = deps.client;
     this.queueUrl = deps.queueUrl;
     this.dlqUrl = deps.dlqUrl;
     this.handle = deps.handle;
     this.logger = deps.logger;
-    this.waitTimeSeconds = deps.waitTimeSeconds ?? 20;
+    // Short enough that a stopping process finishes its poll within the shutdown grace period.
+    this.waitTimeSeconds = deps.waitTimeSeconds ?? 5;
+    this.fifo = deps.queueUrl.endsWith('.fifo');
+    this.workers = deps.workers ?? (this.fifo ? 5 : 1);
   }
 
-  /** Polls until the signal aborts; long polling keeps idle queues cheap. */
+  /**
+   * Polls until the signal aborts; long polling keeps idle queues cheap. On shutdown each worker
+   * finishes the message in hand before it stops, so no message is left hidden: cancelling the
+   * poll instead would not help, since SQS still hands the message to the abandoned request.
+   */
   async run(signal: AbortSignal): Promise<void> {
-    while (!signal.aborted) {
-      try {
-        await this.consumeOnce();
-      } catch (error) {
-        this.logger.error('Could not poll the queue', { error, queueUrl: this.queueUrl });
+    const worker = async () => {
+      while (!signal.aborted) {
+        try {
+          await this.consumeOnce();
+        } catch (error) {
+          this.logger.error('Could not poll the queue', { error, queueUrl: this.queueUrl });
+        }
       }
-    }
+    };
+    await Promise.all(Array.from({ length: this.workers }, worker));
   }
 
-  /** Receives one batch of up to 10 messages and processes them at the same time. */
+  /** Receives one batch (one message on a FIFO queue) and handles it. */
   async consumeOnce(): Promise<number> {
     const { Messages = [] } = await this.client.send(
       new ReceiveMessageCommand({
         QueueUrl: this.queueUrl,
-        MaxNumberOfMessages: 10,
+        MaxNumberOfMessages: this.fifo ? 1 : 10,
         WaitTimeSeconds: this.waitTimeSeconds,
         MessageSystemAttributeNames: ['ApproximateReceiveCount'],
       }),

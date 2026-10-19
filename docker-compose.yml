@@ -3,6 +3,8 @@ name: alegra-lunch
 # Settings every service shares: LocalStack as AWS, and the two topics (PLANNING §3.2).
 x-service: &service
   restart: unless-stopped
+  # Time to finish the message in hand: a long poll (5 s) plus a market purchase slice (10 s).
+  stop_grace_period: 30s
   depends_on:
     localstack:
       condition: service_healthy

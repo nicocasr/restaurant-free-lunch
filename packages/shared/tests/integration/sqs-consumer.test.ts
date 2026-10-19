@@ -138,6 +138,33 @@ describe('SqsConsumer', () => {
     );
   });
 
+  it('finishes the message in hand on shutdown, so none is left hidden', async () => {
+    // Cancelling the poll would not help: SQS would still hand the message to the abandoned
+    // request and hide it for the whole visibility timeout
+    const controller = new AbortController();
+    const handled: string[] = [];
+    const running = new SqsConsumer({
+      client: sqs,
+      queueUrl,
+      dlqUrl,
+      logger,
+      waitTimeSeconds: 1,
+      handle: (event) => {
+        handled.push(event.id);
+        return Promise.resolve(undefined);
+      },
+    }).run(controller.signal);
+    const event = orderPlaced();
+    await send(JSON.stringify(event));
+    await sleep(300);
+
+    controller.abort();
+    await running;
+
+    expect(handled).toEqual([event.id]);
+    expect(await totalMessages(queueUrl)).toBe(0);
+  });
+
   it('retries a failed message soon, instead of waiting the whole visibility timeout', async () => {
     await send(JSON.stringify(orderPlaced()));
     let calls = 0;
@@ -152,5 +179,88 @@ describe('SqsConsumer', () => {
 
     expect(calls).toBe(2);
     expect(await totalMessages(queueUrl)).toBe(0);
+  });
+});
+
+describe('SqsConsumer on a FIFO queue', () => {
+  let fifoUrl: string;
+  let fifoDlqUrl: string;
+
+  beforeEach(async () => {
+    const id = randomUUID();
+    const create = async (name: string) => {
+      const { QueueUrl } = await sqs.send(
+        new CreateQueueCommand({ QueueName: name, Attributes: { FifoQueue: 'true' } }),
+      );
+      return QueueUrl as string;
+    };
+    fifoUrl = await create(`consumer-${id}.fifo`);
+    fifoDlqUrl = await create(`consumer-${id}-dlq.fifo`);
+  });
+
+  afterEach(async () => {
+    await sqs.send(new DeleteQueueCommand({ QueueUrl: fifoUrl }));
+    await sqs.send(new DeleteQueueCommand({ QueueUrl: fifoDlqUrl }));
+  });
+
+  const shortage = (ingredient: 'onion' | 'potato') =>
+    createEvent(
+      'StockShortage',
+      { shortageId: randomUUID(), workdayId: randomUUID(), ingredient, quantity: 1 },
+      { correlationId: randomUUID() },
+    );
+
+  it('handles one message at a time per group, in order, and different groups in parallel', async () => {
+    // A FIFO queue may hand over several messages of the same group in one batch: they are
+    // one purchase per ingredient at a time (PLANNING §3.3), so they must not run together
+    const onions = [shortage('onion'), shortage('onion'), shortage('onion')];
+    const potato = shortage('potato');
+    for (const event of [...onions, potato]) {
+      await sqs.send(
+        new SendMessageCommand({
+          QueueUrl: fifoUrl,
+          MessageBody: JSON.stringify(event),
+          MessageGroupId: event.payload.ingredient,
+          MessageDeduplicationId: event.id,
+        }),
+      );
+    }
+
+    const running = new Map<string, number>();
+    let maxOnionsAtOnce = 0;
+    let potatoOverlappedOnions = false;
+    const handledOnions: string[] = [];
+    const controller = new AbortController();
+    const consumer = new SqsConsumer({
+      client: sqs,
+      queueUrl: fifoUrl,
+      dlqUrl: fifoDlqUrl,
+      logger,
+      waitTimeSeconds: 1,
+      handle: async (event) => {
+        if (event.type !== 'StockShortage') return undefined;
+        const { ingredient } = event.payload;
+        running.set(ingredient, (running.get(ingredient) ?? 0) + 1);
+        maxOnionsAtOnce = Math.max(maxOnionsAtOnce, running.get('onion') ?? 0);
+        if (ingredient === 'potato' && (running.get('onion') ?? 0) > 0) {
+          potatoOverlappedOnions = true;
+        }
+        await sleep(300);
+        if (ingredient === 'onion') handledOnions.push(event.id);
+        running.set(ingredient, (running.get(ingredient) ?? 1) - 1);
+        return undefined;
+      },
+    });
+
+    const consuming = consumer.run(controller.signal);
+    for (let wait = 0; wait < 40 && handledOnions.length < onions.length; wait++) {
+      await sleep(250);
+    }
+    controller.abort();
+    await consuming;
+
+    expect(maxOnionsAtOnce).toBe(1);
+    expect(handledOnions).toEqual(onions.map(({ id }) => id));
+    expect(potatoOverlappedOnions).toBe(true);
   });
 });
