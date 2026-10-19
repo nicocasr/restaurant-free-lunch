@@ -1,0 +1,125 @@
+# Orders in AWS (PLANNING §2): its table, its queue subscribed to the events it consumes,
+# and its Lambdas. The topics and the HTTP API come from the shared stack (infra/aws).
+service: alegra-lunch-orders
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs24.x
+  # Graviton: about 20% cheaper per millisecond than x86.
+  architecture: arm64
+  region: us-east-2
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  timeout: 10
+  logRetentionInDays: 7
+  httpApi:
+    id: ${cf:alegra-lunch-infra-${sls:stage}.HttpApiId}
+  environment:
+    NODE_OPTIONS: --enable-source-maps
+    TABLE_NAME: !Ref OrdersTable
+    DLQ_URL: !Ref OrdersDlq
+    EVENTS_TOPIC_ARN: ${cf:alegra-lunch-infra-${sls:stage}.EventsTopicArn}
+    SHORTAGES_TOPIC_ARN: ${cf:alegra-lunch-infra-${sls:stage}.ShortagesTopicArn}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+            - dynamodb:Query
+            - dynamodb:ConditionCheckItem
+          Resource: !GetAtt OrdersTable.Arn
+        - Effect: Allow
+          Action: sns:Publish
+          Resource:
+            - ${cf:alegra-lunch-infra-${sls:stage}.EventsTopicArn}
+            - ${cf:alegra-lunch-infra-${sls:stage}.ShortagesTopicArn}
+        - Effect: Allow
+          Action: sqs:ChangeMessageVisibility
+          Resource: !GetAtt OrdersQueue.Arn
+        - Effect: Allow
+          Action: sqs:SendMessage
+          Resource: !GetAtt OrdersDlq.Arn
+
+build:
+  esbuild:
+    bundle: true
+    sourcemap: true
+
+functions:
+  queue:
+    handler: src/entrypoints/lambda/handlers.queue
+    events:
+      - sqs:
+          arn: !GetAtt OrdersQueue.Arn
+          batchSize: 10
+          functionResponseType: ReportBatchItemFailures
+          # The account allows 10 Lambdas at a time until the quota increase (PLANNING §2).
+          maximumConcurrency: 2
+  http:
+    handler: src/entrypoints/lambda/handlers.http
+    # A batch of a thousand dishes publishes a thousand events; the HTTP API waits up to 30 s.
+    timeout: 29
+    memorySize: 512
+    events:
+      - httpApi: POST /orders
+      - httpApi: GET /orders
+      - httpApi: POST /workdays
+      - httpApi: GET /workdays/active
+
+resources:
+  Resources:
+    OrdersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: alegra-lunch-${sls:stage}-orders
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+
+    # Only invalid messages land here, sent by the handler; failures retry on the queue (§3.8).
+    OrdersDlq:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: alegra-lunch-${sls:stage}-orders-dlq
+        MessageRetentionPeriod: 1209600
+
+    # Six times the Lambda timeout, as AWS recommends for queues that trigger a Lambda.
+    OrdersQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: alegra-lunch-${sls:stage}-orders
+        VisibilityTimeout: 60
+
+    OrdersQueuePolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        Queues: [!Ref OrdersQueue]
+        PolicyDocument:
+          Statement:
+            - Effect: Allow
+              Principal: { Service: sns.amazonaws.com }
+              Action: sqs:SendMessage
+              Resource: !GetAtt OrdersQueue.Arn
+              Condition:
+                ArnEquals:
+                  aws:SourceArn: ${cf:alegra-lunch-infra-${sls:stage}.EventsTopicArn}
+
+    OrdersSubscription:
+      Type: AWS::SNS::Subscription
+      Properties:
+        TopicArn: ${cf:alegra-lunch-infra-${sls:stage}.EventsTopicArn}
+        Protocol: sqs
+        Endpoint: !GetAtt OrdersQueue.Arn
+        RawMessageDelivery: true
+        FilterPolicy:
+          type:
+            [OrderPlaced, IngredientsRequested, OrderWaitingIngredients, IngredientsReserved, OrderDelivered]
