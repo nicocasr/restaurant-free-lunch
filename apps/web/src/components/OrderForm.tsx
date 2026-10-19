@@ -8,6 +8,12 @@ export function OrderForm() {
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean }>();
 
+  // A new quantity means a new order: the notice of the previous one would only confuse.
+  const choose = (value: number) => {
+    setQuantity(value);
+    setMessage(undefined);
+  };
+
   const submit = async (event: SyntheticEvent) => {
     event.preventDefault();
     setSending(true);
@@ -38,7 +44,7 @@ export function OrderForm() {
             max={1000}
             value={quantity}
             onChange={(event) => {
-              setQuantity(Number(event.target.value));
+              choose(Number(event.target.value));
             }}
           />
           {[10, 50, 100].map((preset) => (
@@ -47,7 +53,7 @@ export function OrderForm() {
               type="button"
               className="chip"
               onClick={() => {
-                setQuantity(preset);
+                choose(preset);
               }}
             >
               {preset}
