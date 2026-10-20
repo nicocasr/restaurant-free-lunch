@@ -11,7 +11,7 @@ import type { WaitingOrder } from '../domain/waiting-list';
 
 /**
  * Result of a conditional write. 'duplicate' means the same message was already applied:
- * the database is the arbiter of idempotency (PLANNING §3.6).
+ * the database is the arbiter of idempotency (PLANNING §3.4).
  */
 export type WriteOutcome = 'applied' | 'duplicate';
 
@@ -37,13 +37,13 @@ export type Purchase = Pick<
   'purchaseId' | 'workdayId' | 'ingredient' | 'quantity'
 >;
 
-/** 'stale' means the purchase belongs to a previous workday and was left out (§3.7). */
+/** 'stale' means the purchase belongs to a previous workday and was left out (§3.5). */
 export type ApplyPurchaseOutcome = WriteOutcome | 'stale';
 
 /** A reservation made from the waiting list that the kitchen has not been told about yet. */
 export type PendingReservation = EventPayload<'IngredientsReserved'>;
 
-/** A purchase request to the market, kept as pending until it is published (§3.5). */
+/** A purchase request to the market, kept as pending until it is published (§3.3). */
 export type Shortage = EventPayload<'StockShortage'>;
 
 /** Persistence port of the warehouse. Every method is atomic. */
@@ -53,19 +53,19 @@ export interface WarehouseRepository {
 
   /**
    * Makes the workday the active one: replaces the whole stock, resets the demand and drops
-   * the shortages not yet published. At most once per workday (§3.7).
+   * the shortages not yet published. At most once per workday (§3.5).
    */
   startWorkday(workdayId: string, stock: Stock): Promise<WriteOutcome>;
 
   /**
-   * Deducts every ingredient of the order, or nothing and reports what is missing (§3.5).
+   * Deducts every ingredient of the order, or nothing and reports what is missing (§3.3).
    * An order is reserved at most once, even when its stock has run out since.
    */
   reserve(orderId: string, needs: readonly IngredientQuantity[]): Promise<ReserveOutcome>;
 
   /**
    * Adds the order to the waiting list and, in the same write, its need of every one of
-   * its ingredients to the aggregated demand (§3.5). An order is listed at most once.
+   * its ingredients to the aggregated demand (§3.3). An order is listed at most once.
    */
   enqueue(order: WaitingOrder): Promise<WriteOutcome>;
 
@@ -86,7 +86,7 @@ export interface WarehouseRepository {
 
   /**
    * Adds the units to the stock and subtracts them from the in-flight purchase, without going
-   * below 0 (the rest are leftovers). Applied at most once per purchase (§3.5), and only
+   * below 0 (the rest are leftovers). Applied at most once per purchase (§3.3), and only
    * when it belongs to the active workday.
    */
   applyPurchase(purchase: Purchase): Promise<ApplyPurchaseOutcome>;

@@ -7,7 +7,7 @@ import { callsForNextRound, recordRound } from '../domain/purchase-progress';
 import type { EventPublisher, FarmersMarket, PurchaseRepository, Sale } from './ports';
 
 /** 'retry' asks the entrypoint to hide the message for that long (PLANNING §3.3). */
-export type PurchaseOutcome = { status: 'completed' } | { status: 'retry'; delaySeconds: number };
+type PurchaseOutcome = { status: 'completed' } | { status: 'retry'; delaySeconds: number };
 
 /**
  * Time a single delivery of the message may spend buying. It stays well under the 30 s
@@ -17,7 +17,7 @@ const DEFAULT_BUDGET_MS = 10_000;
 
 /**
  * Handles StockShortage: buys the ingredient at the farmers market until the shortage is
- * covered (PLANNING §3.5, step 2). Each round makes several calls at once, and every sale goes
+ * covered (PLANNING §3.3, step 2). Each round makes several calls at once, and every sale goes
  * to the warehouse right away. A long purchase goes on in slices: when the budget runs out the
  * message goes back to the queue and the next delivery resumes from the saved progress.
  */
@@ -42,7 +42,7 @@ export function purchaseIngredient(deps: {
     };
 
     // Resuming keeps what was already bought: the farmers market is not idempotent, so a
-    // retry only buys what is still missing (§3.6). Sales recorded by an attempt that died
+    // retry only buys what is still missing (§3.4). Sales recorded by an attempt that died
     // before publishing them go out first, so the warehouse never misses units.
     const record = await deps.purchases.startOrResume(event.payload);
     const { shortageId, workdayId, ingredient } = record;

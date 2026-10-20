@@ -8,8 +8,7 @@ export interface PurchaseProgress {
   failedAttempts: number;
 }
 
-export type NextStep =
-  { action: 'complete' } | { action: 'buy' } | { action: 'wait'; delayMs: number };
+type NextStep = { action: 'complete' } | { action: 'buy' } | { action: 'wait'; delayMs: number };
 
 export function startPurchase(requested: number): PurchaseProgress {
   if (!Number.isInteger(requested) || requested < 1) {
@@ -18,10 +17,10 @@ export function startPurchase(requested: number): PurchaseProgress {
   return { requested, bought: 0, failedAttempts: 0 };
 }
 
-/** Calls to the farmers market at the same time, at most (PLANNING §3.5). */
+/** Calls to the farmers market at the same time, at most (PLANNING §3.3). */
 export const MAX_PARALLEL_CALLS = 5;
 
-/** What the market sold per call in the tests of PLANNING §3.5 (1 to 4 units). */
+/** What the market sold per call in the tests of PLANNING §3.3 (1 to 4 units). */
 const EXPECTED_UNITS_PER_CALL = 2.5;
 
 /**
@@ -37,7 +36,7 @@ export function callsForNextRound(progress: PurchaseProgress): number {
 }
 
 /**
- * Applies the answers of one round of calls (PLANNING §3.5). The market decides how much it
+ * Applies the answers of one round of calls (PLANNING §3.3). The market decides how much it
  * sells: a purchase completes once it covers what was requested, and the extra units are
  * leftovers for the warehouse. Any sale resets the backoff, since the market has stock again;
  * only a round where no call sold anything waits before the next one.

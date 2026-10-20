@@ -2,7 +2,7 @@ import type { DomainEvent, EventPayload, Ingredient } from '@alegra-lunch/contra
 
 import type { PurchaseProgress } from '../domain/purchase-progress';
 
-/** What the warehouse asked to buy (PLANNING §3.5). */
+/** What the warehouse asked to buy (PLANNING §3.3). */
 export type Shortage = EventPayload<'StockShortage'>;
 
 /** One successful call to the farmers market, as kept in the purchase history. */
@@ -16,7 +16,6 @@ export interface PurchaseRecord {
   progress: PurchaseProgress;
 }
 
-/** The external farmers market API. */
 export interface FarmersMarket {
   /** Tries to buy the ingredient; the market decides how many units it sells (0 = none). */
   buy(ingredient: Ingredient): Promise<number>;

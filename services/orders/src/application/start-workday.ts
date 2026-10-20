@@ -17,7 +17,7 @@ type Deps = { orders: OrdersRepository; publisher: EventPublisher };
 
 /**
  * Switches the active workday, unless another request got there first: then the workday that
- * won is returned, since the manager wanted a new workday and it exists (PLANNING §3.7).
+ * won is returned, since the manager wanted a new workday and it exists (PLANNING §3.5).
  */
 async function switchTo(deps: Deps, from: string | undefined): Promise<{ workdayId: string }> {
   const next = randomUUID();
@@ -28,7 +28,7 @@ async function switchTo(deps: Deps, from: string | undefined): Promise<{ workday
   return { workdayId: next };
 }
 
-/** Handles POST /workdays: the warehouse goes back to 5 units of each ingredient (§3.7). */
+/** Handles POST /workdays: the warehouse goes back to 5 units of each ingredient (§3.5). */
 export function startWorkday(deps: Deps) {
   return async (): Promise<{ workdayId: string }> => {
     await announcePendingWorkdays(deps);

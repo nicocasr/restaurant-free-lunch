@@ -80,7 +80,7 @@ export function createLambdaHttpHandler(options: {
   return createHttpHandler(router, { maxBodyBytes: MAX_BODY_BYTES });
 }
 
-/** Serves the routes of a service with node:http until it shuts down (PLANNING §3.4). */
+/** Serves the routes of a service with node:http until it shuts down (docs/ARCHITECTURE.md). */
 export async function serveHttp(options: {
   routes: readonly Route[];
   port: number;

@@ -68,7 +68,7 @@ describe('purchaseIngredient', () => {
       expect(purchased).toHaveLength(1);
     });
 
-    it('calls the market several times at once while much is missing (PLANNING §3.5)', async () => {
+    it('calls the market several times at once while much is missing (PLANNING §3.3)', async () => {
       // 10 missing: a round of 4 calls; then 2 missing: a round of 1 call
       const { market, handle } = setup([2, 2, 2, 2, 2]);
 

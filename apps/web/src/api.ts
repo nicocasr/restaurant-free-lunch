@@ -53,7 +53,7 @@ export const api = {
       `${config.ordersUrl}/orders${workdayId ? `?workdayId=${workdayId}` : ''}`,
     ),
 
-  /** The key makes a double click or a retry place the batch only once (PLANNING §3.6). */
+  /** The key makes a double click or a retry place the batch only once (PLANNING §3.4). */
   placeOrders: (quantity: number, idempotencyKey: string) =>
     request<{ batchId: string; orderIds: string[] }>(`${config.ordersUrl}/orders`, {
       method: 'POST',

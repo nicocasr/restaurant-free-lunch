@@ -5,7 +5,7 @@ import { CreateOrdersRequestSchema, createEvent } from '@alegra-lunch/contracts'
 import { announcePendingWorkdays } from './announce-workdays';
 import type { Batch, EventPublisher, OrdersRepository } from './ports';
 
-export interface PlaceOrdersRequest {
+interface PlaceOrdersRequest {
   idempotencyKey: string;
   quantity: number;
 }
@@ -21,7 +21,7 @@ export class InvalidOrderRequestError extends Error {
 /**
  * Handles POST /orders: the manager asks for a number of dishes (R1). The order ids are fixed
  * inside the batch first, so the orders can be written in several steps and a retry with the
- * same key completes them without duplicates (PLANNING §3.6).
+ * same key completes them without duplicates (PLANNING §3.4).
  */
 export function placeOrders(deps: {
   orders: OrdersRepository;
@@ -38,7 +38,7 @@ export function placeOrders(deps: {
       );
     }
 
-    // The warehouse must get its WorkdayStarted before any order of that workday (§3.7).
+    // The warehouse must get its WorkdayStarted before any order of that workday (§3.5).
     await announcePendingWorkdays(deps);
 
     const workdayId = await deps.orders.activeWorkday();

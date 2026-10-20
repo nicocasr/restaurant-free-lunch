@@ -110,7 +110,7 @@ export function warehouseRepositoryContract(
         expect(await repository.readStock()).toEqual(stockOf({}));
       });
 
-      it('never lets concurrent reservations take the same units (PLANNING §3.5)', async () => {
+      it('never lets concurrent reservations take the same units (PLANNING §3.3)', async () => {
         // Enough cheese for exactly 25 Changuas; 100 orders arrive at the same time
         await startWith({ cheese: 50, onion: 30 });
 

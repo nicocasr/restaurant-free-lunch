@@ -5,14 +5,14 @@ import type { EventPublisher, WarehouseRepository } from './ports';
 import { publishPendingReservations, publishReservation } from './publish-reservations';
 import { requestPurchaseIfNeeded } from './request-purchase';
 
-/** Handles IngredientPurchased: adds what the market sold to the stock (§3.5, step 3). */
+/** Handles IngredientPurchased: adds what the market sold to the stock (§3.3, step 3). */
 export function receivePurchase(deps: {
   warehouse: WarehouseRepository;
   publisher: EventPublisher;
 }) {
   return async (event: EventEnvelope<'IngredientPurchased'>): Promise<void> => {
     const { purchaseId, workdayId, ingredient, quantity } = event.payload;
-    // A late purchase from a previous workday never alters the new one (§3.7). On a duplicate
+    // A late purchase from a previous workday never alters the new one (§3.5). On a duplicate
     // the rest runs again: the first attempt may have died halfway.
     const outcome = await deps.warehouse.applyPurchase({
       purchaseId,

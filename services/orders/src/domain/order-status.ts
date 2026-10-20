@@ -25,14 +25,14 @@ export function statusFor(type: EventType): OrderStatus | undefined {
 }
 
 /**
- * A status only moves forward (PLANNING §3.6): a repeated or late event never takes an order
+ * A status only moves forward (PLANNING §3.4): a repeated or late event never takes an order
  * back. Skipping a status is fine, e.g. an order that never had to wait for ingredients.
  */
 export function advance(current: OrderStatus, next: OrderStatus): OrderStatus {
   return ORDER_STATUSES.indexOf(next) > ORDER_STATUSES.indexOf(current) ? next : current;
 }
 
-/** Orders still in progress block a new workday (PLANNING §3.7). */
+/** Orders still in progress block a new workday (PLANNING §3.5). */
 export function isInProgress(status: OrderStatus): boolean {
   return status !== 'DELIVERED';
 }

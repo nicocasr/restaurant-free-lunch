@@ -4,7 +4,7 @@ import type { Router } from '../http/router';
 
 /**
  * Lambda adapter of the HTTP router, behind an API Gateway HTTP API: it only translates the
- * request and the response, so routes and errors behave as in the container (PLANNING §3.4).
+ * request and the response, so routes and errors behave as in the container (docs/ARCHITECTURE.md).
  */
 export function createHttpHandler(router: Router, options: { maxBodyBytes: number }) {
   return async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> => {

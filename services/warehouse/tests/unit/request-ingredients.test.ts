@@ -38,7 +38,7 @@ function setup() {
 describe('requestIngredients', () => {
   describe('when the order belongs to a workday the warehouse has not started yet', () => {
     // WorkdayStarted travels in one hop and IngredientsRequested in two, but SQS does not
-    // guarantee the order: the request must wait for the reset to 5 units (PLANNING §3.7)
+    // guarantee the order: the request must wait for the reset to 5 units (PLANNING §3.5)
     it('fails without touching the stock, so the message is retried later', async () => {
       const { warehouse, publisher, handle } = setup();
       warehouse.stock = stockOf({ cheese: 1, onion: 9 });
@@ -275,7 +275,7 @@ describe('requestIngredients', () => {
     });
 
     // Both evaluations may publish the same pending shortage: delivery is at-least-once and the
-    // market is idempotent per shortageId (§3.6). What must never happen is two shortages.
+    // market is idempotent per shortageId (§3.4). What must never happen is two shortages.
     it('registers a single purchase when two orders are evaluated at the same time', async () => {
       const { warehouse, publisher, handle } = setup();
 

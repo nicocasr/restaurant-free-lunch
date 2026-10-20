@@ -4,7 +4,7 @@ import type { EventPublisher, OrdersRepository } from './ports';
 
 /**
  * Publishes WorkdayStarted for every workday that became active without being announced,
- * because the process that switched to it died before publishing (PLANNING §3.7).
+ * because the process that switched to it died before publishing (PLANNING §3.5).
  */
 export async function announcePendingWorkdays(deps: {
   orders: OrdersRepository;

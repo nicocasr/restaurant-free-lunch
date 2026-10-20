@@ -7,7 +7,7 @@ import { WorkdayInProgressError, startWorkday } from '../../application/start-wo
 
 const IdempotencyKeySchema = z.uuid();
 
-/** The errors the manager can cause, with the status the API answers (PLANNING §3.7). */
+/** The errors the manager can cause, with the status the API answers (PLANNING §3.5). */
 export function statusFor(error: Error): number | undefined {
   if (error instanceof InvalidOrderRequestError) return 400;
   if (error instanceof WorkdayInProgressError) return 409;

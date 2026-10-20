@@ -6,7 +6,7 @@ import { evaluateDemand } from '../domain/demand';
 import type { EventPublisher, Shortage, WarehouseRepository } from './ports';
 
 /**
- * Asks the market for whatever the waiting orders still need of one ingredient (§3.5).
+ * Asks the market for whatever the waiting orders still need of one ingredient (§3.3).
  * The shortage is registered as pending before it is published, and a pending one is
  * published here, so a process that dies in between never loses a purchase request.
  */

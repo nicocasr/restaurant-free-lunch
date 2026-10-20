@@ -1,4 +1,4 @@
-/** Aggregated demand for one ingredient (PLANNING §3.5). */
+/** Aggregated demand for one ingredient (PLANNING §3.3). */
 export interface Demand {
   /** Units the orders in the waiting list need, in total. */
   waitingNeed: number;
@@ -6,7 +6,7 @@ export interface Demand {
   inFlight: number;
 }
 
-export interface DemandEvaluation {
+interface DemandEvaluation {
   /** Units to request from the market now; 0 means no purchase is needed. */
   toPurchase: number;
   /** The demand after registering that request as in flight. */

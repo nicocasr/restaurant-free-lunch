@@ -59,7 +59,7 @@ const keys = {
 };
 
 /**
- * DynamoDB adapter of the warehouse port (PLANNING §3.5 and §3.6). The database is the
+ * DynamoDB adapter of the warehouse port (PLANNING §3.3 and §3.4). The database is the
  * arbiter: every rule that must hold under concurrency is a condition of the write itself.
  */
 export class DynamoWarehouse implements WarehouseRepository {

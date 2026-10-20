@@ -11,7 +11,7 @@ export interface WaitingOrder {
   needs: IngredientQuantity[];
 }
 
-export interface WaitingListOutcome {
+interface WaitingListOutcome {
   /** Orders whose ingredients were reserved, in the order they were served. */
   served: WaitingOrder[];
   /** Orders that still lack ingredients, oldest first. */
@@ -20,7 +20,7 @@ export interface WaitingListOutcome {
 }
 
 /**
- * Flexible FIFO (PLANNING §3.5): orders are tried oldest first, but one that cannot be
+ * Flexible FIFO (PLANNING §3.3): orders are tried oldest first, but one that cannot be
  * served does not block the ones behind it.
  */
 export function serveWaitingList(

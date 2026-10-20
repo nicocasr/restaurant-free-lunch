@@ -21,7 +21,7 @@ const api = createLambdaHttpHandler({ routes, statusFor, corsOrigin: config.CORS
 
 /**
  * A Lambda has no start-up step like a container, so the first request of each instance seeds
- * the first workday. Seeding is idempotent, so instances doing it at once is safe (§3.7).
+ * the first workday. Seeding is idempotent, so instances doing it at once is safe (§3.5).
  */
 let seeded: Promise<unknown> | undefined;
 

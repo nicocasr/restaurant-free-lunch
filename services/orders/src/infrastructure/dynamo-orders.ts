@@ -52,7 +52,7 @@ const keys = {
  * DynamoDB adapter of the orders port. Orders live in their workday, spread over SHARDS
  * partitions, so a workday is listed with a handful of queries and never with a scan. A
  * counter per workday, updated in the same transaction as each order, answers "are there
- * orders in progress?" with a single consistent read (PLANNING §3.7).
+ * orders in progress?" with a single consistent read (PLANNING §3.5).
  */
 export class DynamoOrders implements OrdersRepository {
   private readonly client: DynamoDBDocumentClient;
@@ -178,7 +178,7 @@ export class DynamoOrders implements OrdersRepository {
       assignments.push('deliveredAt = :deliveredAt');
       values[':deliveredAt'] = deliveredAt;
     }
-    // Only forward (§3.6): a late or repeated event fails the condition and changes nothing,
+    // Only forward (§3.4): a late or repeated event fails the condition and changes nothing,
     // and the delivery leaves the in-progress counter in the same transaction, exactly once.
     await this.transact([
       {

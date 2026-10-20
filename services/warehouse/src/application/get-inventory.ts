@@ -2,7 +2,7 @@ import { INGREDIENTS, type Ingredient } from '@alegra-lunch/contracts';
 
 import type { WarehouseRepository } from './ports';
 
-export interface Inventory {
+interface Inventory {
   workdayId: string | undefined;
   ingredients: { ingredient: Ingredient; stock: number; waitingNeed: number; inFlight: number }[];
   waitingOrders: number;

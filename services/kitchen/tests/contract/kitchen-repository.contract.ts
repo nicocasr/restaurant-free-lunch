@@ -39,7 +39,7 @@ export function kitchenRepositoryContract(
       expect(await repository.findAssignment(ajiaco.orderId)).toEqual(ajiaco);
     });
 
-    it('keeps the first recipe when the order is assigned again (PLANNING §3.6)', async () => {
+    it('keeps the first recipe when the order is assigned again (PLANNING §3.4)', async () => {
       const orderId = randomUUID();
       const first = assignment(orderId, 'ajiaco');
       await repository.assignOnce(first);

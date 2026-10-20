@@ -7,7 +7,7 @@ export const MAX_RETRY_DELAY_MS = 10_000;
 const FIRST_RETRY_DELAY_MS = 1_000;
 
 /**
- * Exponential backoff with full jitter (PLANNING §3.5): the base time doubles on each attempt
+ * Exponential backoff with full jitter (PLANNING §3.3): the base time doubles on each attempt
  * up to the cap, and the actual wait is a random share of it, so retries of different
  * ingredients spread out instead of hitting the market all at once.
  */

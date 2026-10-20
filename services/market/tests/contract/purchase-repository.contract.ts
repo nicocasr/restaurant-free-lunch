@@ -64,7 +64,7 @@ export function purchaseRepositoryContract(
     });
 
     it('adds every sale to what was bought, so two buyers at once never lose a count', async () => {
-      // Each sale adds its units in the same write that records it (PLANNING §3.5)
+      // Each sale adds its units in the same write that records it (PLANNING §3.3)
       const onion = shortage(30);
       await repository.startOrResume(onion);
       const sales = Array.from({ length: 10 }, (_, index) => saleOf(onion, (index % 4) + 1));

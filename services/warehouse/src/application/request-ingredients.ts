@@ -12,7 +12,7 @@ export class WorkdayNotStartedError extends Error {
   }
 }
 
-/** Handles IngredientsRequested: reserves every ingredient of the recipe at once (§3.5). */
+/** Handles IngredientsRequested: reserves every ingredient of the recipe at once (§3.3). */
 export function requestIngredients(deps: {
   warehouse: WarehouseRepository;
   publisher: EventPublisher;
@@ -22,14 +22,14 @@ export function requestIngredients(deps: {
     const context = { correlationId: event.correlationId };
 
     // WorkdayStarted may arrive after the first orders of its workday, since SQS does not
-    // guarantee the order (§3.7). A plain read is enough: the workday only changes when no
+    // guarantee the order (§3.5). A plain read is enough: the workday only changes when no
     // order is in progress, and this one is.
     if ((await deps.warehouse.activeWorkday()) !== workdayId) {
       throw new WorkdayNotStartedError(workdayId);
     }
 
     // On a duplicate write the event is published again: the first attempt may have died
-    // between the write and the publish (§3.6).
+    // between the write and the publish (§3.4).
     const publishReserved = () =>
       deps.publisher.publish(createEvent('IngredientsReserved', { orderId, workdayId }, context));
 

@@ -23,7 +23,7 @@ export const httpConfig = {
   CORS_ORIGIN: z.string().min(1).default('*'),
 };
 
-/** A variable is missing or invalid: the service refuses to start (PLANNING §3.8). */
+/** A variable is missing or invalid: the service refuses to start (PLANNING §3.6). */
 export class ConfigError extends Error {
   constructor(error: z.ZodError) {
     super(`Invalid configuration:\n${z.prettifyError(error)}`);

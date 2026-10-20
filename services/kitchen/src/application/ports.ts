@@ -11,7 +11,7 @@ export interface Assignment {
 export interface KitchenRepository {
   /**
    * Stores the assignment only if the order has none yet, and returns the one that is stored:
-   * a repeated message gets the recipe of the first attempt (PLANNING §3.6).
+   * a repeated message gets the recipe of the first attempt (PLANNING §3.4).
    */
   assignOnce(assignment: Assignment): Promise<Assignment>;
 

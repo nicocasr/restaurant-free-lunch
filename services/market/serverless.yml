@@ -89,7 +89,7 @@ resources:
           - { AttributeName: pk, KeyType: HASH }
           - { AttributeName: sk, KeyType: RANGE }
 
-    # Only invalid messages land here, sent by the handler; failures retry on the queue (§3.8).
+    # Only invalid messages land here, sent by the handler; failures retry on the queue (§3.6).
     MarketDlq:
       Type: AWS::SQS::Queue
       Properties:

@@ -18,7 +18,7 @@ const { handle, routes, seed } = wire(config);
 async function main(): Promise<void> {
   const signal = shutdownSignal(logger);
 
-  // The first start creates the first workday, so the warehouse begins with 5 of each (§3.7).
+  // The first start creates the first workday, so the warehouse begins with 5 of each (§3.5).
   const { workdayId } = await seed();
   logger.info('Active workday', { workdayId });
 

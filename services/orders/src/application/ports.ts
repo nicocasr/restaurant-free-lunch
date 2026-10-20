@@ -57,7 +57,7 @@ export interface OrdersRepository {
 
   /**
    * Stores the batch only if its key is new, and returns the one that is stored: a repeated
-   * request gets the orders of the first attempt (PLANNING §3.6).
+   * request gets the orders of the first attempt (PLANNING §3.4).
    */
   createBatch(batch: Batch): Promise<Batch>;
 
@@ -66,7 +66,7 @@ export interface OrdersRepository {
 
   /**
    * The recipe is kept whenever it arrives, since events may come in any order. The status
-   * only moves forward (PLANNING §3.6), and the waiting details are kept only when the order
+   * only moves forward (PLANNING §3.4), and the waiting details are kept only when the order
    * actually moves to WAITING_INGREDIENTS.
    */
   updateOrder(order: OrderKey, update: OrderUpdate): Promise<void>;

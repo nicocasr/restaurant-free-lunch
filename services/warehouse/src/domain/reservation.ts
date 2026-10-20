@@ -2,11 +2,11 @@ import type { IngredientQuantity } from '@alegra-lunch/contracts';
 
 import type { Stock } from './stock';
 
-export type ReservationResult =
+type ReservationResult =
   { reserved: true; stock: Stock } | { reserved: false; missing: IngredientQuantity[] };
 
 /**
- * All-or-nothing reservation (PLANNING §3.5): either every ingredient of the recipe
+ * All-or-nothing reservation (PLANNING §3.3): either every ingredient of the recipe
  * is deducted, or nothing is and the exact shortfall is reported.
  */
 export function reserve(stock: Stock, needs: readonly IngredientQuantity[]): ReservationResult {

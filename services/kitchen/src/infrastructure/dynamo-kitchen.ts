@@ -6,7 +6,7 @@ import type { Assignment, KitchenRepository } from '../application/ports';
 // One partition per order spreads thousands of assignments across DynamoDB partitions.
 const key = (orderId: string) => ({ pk: `ASSIGNMENT#${orderId}`, sk: 'ASSIGNMENT' });
 
-/** DynamoDB adapter of the kitchen port. The database decides which draw wins (§3.6). */
+/** DynamoDB adapter of the kitchen port. The database decides which draw wins (§3.4). */
 export class DynamoKitchen implements KitchenRepository {
   private readonly client: DynamoDBDocumentClient;
   private readonly tableName: string;

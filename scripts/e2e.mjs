@@ -49,7 +49,7 @@ for (;;) {
   await new Promise((resolve) => setTimeout(resolve, 2_000));
 }
 
-// The warehouse never hands out a unit it does not have (PLANNING §3.5).
+// The warehouse never hands out a unit it does not have (PLANNING §3.3).
 const { ingredients } = await call(`${warehouseUrl}/inventory`);
 const negative = ingredients.filter(({ stock }) => stock < 0);
 if (negative.length > 0) {

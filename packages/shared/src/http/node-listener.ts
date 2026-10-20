@@ -24,7 +24,7 @@ async function readBody(request: IncomingMessage, maxBytes: number): Promise<str
   return size > 0 ? Buffer.concat(chunks).toString('utf8') : undefined;
 }
 
-/** Serves a router with node:http, the local transport of the services (PLANNING §3.4). */
+/** Serves a router with node:http, the local transport of the services (docs/ARCHITECTURE.md). */
 export function nodeListener(router: Router, options: { maxBodyBytes: number }) {
   return (request: IncomingMessage, response: ServerResponse): void => {
     void (async () => {

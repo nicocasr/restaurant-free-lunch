@@ -12,7 +12,7 @@ const positiveInt = z.int().positive();
  * knows it; a service in between (realtime) must forward it untouched.
  *
  * Payload schemas, one per event. Every event carries the workday it belongs to,
- * so history can be grouped by workday (PLANNING §3.7).
+ * so history can be grouped by workday (PLANNING §3.5).
  */
 const payloadSchemas = {
   /** orders → warehouse: a new workday began; the warehouse resets to 5 units of each ingredient. */
