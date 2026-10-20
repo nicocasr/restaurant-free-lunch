@@ -148,6 +148,10 @@ la regla de versiones quedó explícita: agregar un campo opcional no cambia la 
 | Stock final                | nunca negativo; pocas unidades de sobra                                          |
 | Créditos                   | centavos por prueba; ningún cobro                                                |
 
+**p95** (percentil 95) es el tiempo en que se aceptó el 95% de los pedidos: solo el 5% más
+lento tardó más. Se usa en lugar del promedio porque el promedio esconde a los usuarios que
+esperaron mucho.
+
 En la última carga, 9 reservas chocaron sobre el mismo ingrediente (6 conflictos de transacción
 y 3 frenos momentáneos de DynamoDB por la cebolla, que está en todos los platos). Todas se
 reintentaron en 1 s y ningún plato se perdió.
