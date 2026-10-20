@@ -23,12 +23,13 @@ const infra = outputsOf(`alegra-lunch-infra-${stage}`);
 const realtime = outputsOf(`alegra-lunch-realtime-${stage}`);
 const web = outputsOf(`alegra-lunch-web-${stage}`);
 
-// One HTTP API serves orders, warehouse, kitchen and market, so they share the URL.
+// One HTTP API serves orders, warehouse, kitchen, market and the assistant: one URL.
 run('npm run build', {
   VITE_ORDERS_URL: infra.HttpApiUrl,
   VITE_WAREHOUSE_URL: infra.HttpApiUrl,
   VITE_KITCHEN_URL: infra.HttpApiUrl,
   VITE_MARKET_URL: infra.HttpApiUrl,
+  VITE_ASSISTANT_URL: infra.HttpApiUrl,
   VITE_REALTIME_URL: realtime.ServiceEndpointWebsocket,
 });
 

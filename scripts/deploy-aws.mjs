@@ -26,6 +26,7 @@ for (const path of [
   'services/market',
   'services/orders',
   'services/realtime',
+  'services/assistant',
   'apps/web',
 ]) {
   deploy(path);

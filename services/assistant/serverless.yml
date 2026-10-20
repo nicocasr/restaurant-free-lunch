@@ -1,0 +1,69 @@
+# The assistant in AWS (PLANNING §5): one Lambda behind the shared HTTP API, its question
+# counters, and the Gemini API key read from SSM Parameter Store. It consumes no queue.
+service: alegra-lunch-assistant
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs24.x
+  # Graviton: about 20% cheaper per millisecond than x86.
+  architecture: arm64
+  region: us-east-2
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  logRetentionInDays: 7
+  httpApi:
+    id: ${cf:alegra-lunch-infra-${sls:stage}.HttpApiId}
+  environment:
+    NODE_OPTIONS: --enable-source-maps
+    TABLE_NAME: !Ref AssistantTable
+    # The query APIs it reads: in AWS, the same HTTP API serves all of them.
+    ORDERS_URL: ${cf:alegra-lunch-infra-${sls:stage}.HttpApiUrl}
+    WAREHOUSE_URL: ${cf:alegra-lunch-infra-${sls:stage}.HttpApiUrl}
+    MARKET_URL: ${cf:alegra-lunch-infra-${sls:stage}.HttpApiUrl}
+    KITCHEN_URL: ${cf:alegra-lunch-infra-${sls:stage}.HttpApiUrl}
+    # Only the name travels in the configuration; the key itself stays encrypted in SSM.
+    GEMINI_API_KEY_PARAMETER: /alegra-lunch/${sls:stage}/gemini-api-key
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          # The question counters go up in a transaction of two updates.
+          Action: dynamodb:UpdateItem
+          Resource: !GetAtt AssistantTable.Arn
+        - Effect: Allow
+          Action: ssm:GetParameter
+          Resource: arn:aws:ssm:${aws:region}:${aws:accountId}:parameter/alegra-lunch/${sls:stage}/gemini-api-key
+
+build:
+  esbuild:
+    bundle: true
+    sourcemap: true
+
+functions:
+  http:
+    handler: src/entrypoints/lambda/handlers.http
+    # Reading the services (5 s) plus Gemini (15 s), within the 30 s the HTTP API waits.
+    timeout: 25
+    # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
+    reservedConcurrency: 10
+    events:
+      - httpApi: POST /assistant
+
+resources:
+  Resources:
+    AssistantTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: alegra-lunch-${sls:stage}-assistant
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - { AttributeName: pk, AttributeType: S }
+          - { AttributeName: sk, AttributeType: S }
+        KeySchema:
+          - { AttributeName: pk, KeyType: HASH }
+          - { AttributeName: sk, KeyType: RANGE }
+        # The counters of past minutes and days delete themselves.
+        TimeToLiveSpecification:
+          AttributeName: expiresAt
+          Enabled: true
