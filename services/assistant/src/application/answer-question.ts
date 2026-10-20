@@ -26,6 +26,17 @@ export class TooManyQuestionsError extends Error {
 }
 
 /**
+ * The model could not answer: its free quota ran out, it took too long or it failed. Answered
+ * with a 503 and a message the manager understands; the dashboard keeps working without it.
+ */
+export class AssistantUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`The assistant cannot answer right now (${reason}). Try again in a minute.`);
+    this.name = 'AssistantUnavailableError';
+  }
+}
+
+/**
  * Answers a question of the manager with the data of the current workday (PLANNING §5): one
  * read of every service and one call to the model. The limit is checked first, so a refused
  * question costs nothing, and an invalid one does not even count.

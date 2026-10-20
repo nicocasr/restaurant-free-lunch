@@ -13,6 +13,12 @@
   "dependencies": {
     "@alegra-lunch/contracts": "0.1.0",
     "@alegra-lunch/shared": "0.1.0",
+    "@aws-sdk/client-dynamodb": "^3.1146.0",
+    "@aws-sdk/lib-dynamodb": "^3.1146.0",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@alegra-lunch/testing": "0.1.0",
+    "@types/aws-lambda": "^8.10.164"
   }
 }
