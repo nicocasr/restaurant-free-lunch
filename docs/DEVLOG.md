@@ -1,207 +1,224 @@
-# Jornada de Almuerzo Gratis — Bitácora de desarrollo
+# Free Lunch Day — Development log
 
-> Cómo evolucionó el proyecto: qué se construyó en cada fase, qué encontraron las pruebas y qué
-> se cambió por ello. Las decisiones vigentes están en [PLANNING.md](PLANNING.md) y el diseño
-> actual en [ARCHITECTURE.md](ARCHITECTURE.md).
+> How the project evolved: what was built in each phase, what the tests found and what changed
+> because of it. The current decisions are in [PLANNING.md](PLANNING.md) and the current design
+> in [ARCHITECTURE.md](ARCHITECTURE.md).
+>
+> **Versión en español:** [DEVLOG.es.md](DEVLOG.es.md).
 
-Cada hallazgo sigue la misma forma: **qué se vio**, **la causa** y **la corrección**, con su
-medición cuando la hubo.
+Every finding follows the same shape: **what was seen**, **the cause** and **the fix**, with its
+measurement when there was one.
 
 ---
 
-## Fases
+## Phases
 
-### 15-16/10 — Análisis, setup y contratos
+### 15-16/10 — Analysis, setup and contracts
 
-- Se escribió y aprobó el plan antes de la primera línea de código (v1.0).
-- Monorepo con npm workspaces, TypeScript strict, ESLint, Prettier, Jest y CI en GitHub Actions.
-- Contratos de los eventos en `packages/contracts`, validados con zod.
+- The plan was written and approved before the first line of code (v1.0).
+- Monorepo with npm workspaces, strict TypeScript, ESLint, Prettier, Jest and CI on GitHub Actions.
+- Event contracts in `packages/contracts`, validated with zod.
 
-**Antes de escribir código, el plan se refinó cuatro veces** al recorrer los casos difíciles:
+**Before writing code, the plan was refined four times** while walking through the hard cases:
 
-| Se vio                                                                                     | Corrección                                                            |
-| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| R4 ("la bodega inicia siempre con 5") choca con la persistencia                            | Concepto de **jornada** (v1.1)                                        |
-| `StockShortage` es por ingrediente: no dice qué pedido espera ni qué le falta              | Nuevo evento `OrderWaitingIngredients` (v1.2)                         |
-| Los tipos de TypeScript no existen en ejecución                                            | Validación con zod en cada frontera (v1.3)                            |
-| Si el proceso muere entre guardar y publicar, un duplicado "ya procesado" no publicaría nada | Ante un duplicado, **republicar** el evento resultante (v1.4)        |
+| Seen                                                                                        | Fix                                                             |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| R4 ("the warehouse always starts with 5") clashes with persistence                          | The concept of a **workday** (v1.1)                             |
+| `StockShortage` is per ingredient: it does not say which order waits or what it misses      | A new event, `OrderWaitingIngredients` (v1.2)                   |
+| TypeScript types do not exist at runtime                                                    | Validation with zod at every boundary (v1.3)                    |
+| If the process dies between saving and publishing, an "already processed" duplicate would publish nothing | A duplicate **publishes the resulting event again** (v1.4) |
 
-### 17/10 — Dominio con TDD
+### 17/10 — Domain with TDD
 
-Los tests de warehouse y market sacaron a la luz casos que el plan no cubría:
+The tests of warehouse and market brought up cases the plan did not cover:
 
-| Se vio (al escribir el test)                                                                                                                 | Corrección                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Un Ajiaco espera cebolla; mientras tanto otros pedidos gastan la papa que sí había, y nadie la compra: el pedido queda atascado para siempre | La espera suma a la demanda **todos** los ingredientes del pedido (v1.5)    |
-| Tres Changuas seguidas emitían tres faltantes de 1 cebolla; market compraba los tres aunque el primero ya trajera suficiente                 | **Un solo faltante activo por ingrediente** (v1.6)                           |
-| Si el proceso muere entre fijar `inFlight` y publicar el faltante, nadie vuelve a pedir la compra                                           | El faltante se guarda **pendiente** y se republica (v1.6)                    |
-| Si muere entre sacar un pedido de la espera y avisar a la cocina, el plato se pierde                                                         | La reserva se guarda **pendiente de publicar** (v1.7)                        |
-| Una compra en curso al cerrar la jornada entraría al stock de la siguiente                                                                    | La nueva jornada reinicia la demanda e ignora compras atrasadas (v1.8)      |
-| Los reintentos de varios ingredientes llegaban a la plaza en el mismo instante                                                               | *Backoff* con **full jitter** (v1.10)                                        |
-| Dormir dentro de la Lambda para reintentar se paga por segundo y choca con su límite de 15 minutos                                           | Los reintentos los hace la **cola** con `ChangeMessageVisibility` (v1.11)   |
+| Seen (while writing the test)                                                                                                       | Fix                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| An Ajiaco waits for onion; meanwhile other orders use up the potato that was there, and nobody buys it: the order is stuck forever | A waiting order adds **every** ingredient of its recipe to the demand (v1.5) |
+| Three Changuas in a row raised three shortages of 1 onion; market bought all three even if the first brought enough                 | **One active shortage per ingredient** (v1.6)                               |
+| If the process dies between setting `inFlight` and publishing the shortage, nobody asks for the purchase again                      | The shortage is saved as **pending** and published again (v1.6)            |
+| If it dies between taking an order off the waiting list and telling the kitchen, the dish is lost                                    | The reservation is saved as **pending to publish** (v1.7)                  |
+| A purchase in progress when a workday closes would enter the next workday's stock                                                    | A new workday resets the demand and ignores late purchases (v1.8)          |
+| The retries of several ingredients reached the market at the same instant                                                            | Backoff with **full jitter** (v1.10)                                        |
+| Sleeping inside the Lambda to retry is paid by the second and clashes with its 15-minute limit                                       | The **queue** does the retries, with `ChangeMessageVisibility` (v1.11)     |
 
-### 18/10 — Adaptadores y Docker local
+### 18/10 — Adapters and local Docker
 
-- Adaptadores de DynamoDB, SNS, SQS y la plaza, con pruebas de integración contra LocalStack. Los
-  repositorios pasan el mismo contrato de pruebas con los fakes y con DynamoDB.
-- Dockerfile por servicio y `docker compose up` con el flujo completo.
+- Adapters for DynamoDB, SNS, SQS and the market, with integration tests against LocalStack. The
+  repositories pass the same contract tests with the fakes and with DynamoDB.
+- A Dockerfile per service, and `docker compose up` with the whole flow.
 
-| Se vio                                                                                                    | Corrección                                                                       |
-| --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Un lote de 1000 platos no cabe en una transacción (máximo 100 ítems)                                       | El lote guarda sus `orderId` y los pedidos se escriben "si no existe" (v1.12)   |
-| `WorkdayStarted` puede llegar a warehouse **después** de un pedido de la jornada nueva                    | Warehouse solo atiende pedidos de una jornada que ya inició (v1.13)             |
-| LocalStack 2026.03 empezó a exigir cuenta y *auth token*                                                  | Versión fijada en **4.14.0**, la última que arranca sin registro (v1.14)        |
-| AWS no permite suscribir una cola FIFO a un topic estándar                                                | Segundo topic `shortages.fifo` solo para `StockShortage` (v1.14)                |
-| Listar los pedidos de una jornada con *scan* no escala                                                    | Pedidos en 10 particiones por jornada y un contador de pedidos en curso (v1.15) |
+| Seen                                                                                         | Fix                                                                              |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| A batch of 1000 dishes does not fit in a transaction (100 items at most)                     | The batch keeps its `orderId`s and the orders are written "if absent" (v1.12)    |
+| `WorkdayStarted` may reach the warehouse **after** an order of the new workday               | The warehouse only serves orders of a workday it has already started (v1.13)     |
+| LocalStack 2026.03 began to require an account and an auth token                             | Pinned to **4.14.0**, the last one that starts without signing up (v1.14)        |
+| AWS does not let a FIFO queue subscribe to a standard topic                                  | A second topic, `shortages.fifo`, only for `StockShortage` (v1.14)               |
+| Listing a workday's orders with a *scan* does not scale                                      | Orders in 10 partitions per workday, and a counter of orders in progress (v1.15) |
 
-#### Prueba de usuario: compras duplicadas y lentas (v1.17)
+#### User test: duplicated and slow purchases (v1.17)
 
-**Se vio:** con 50 platos, los pedidos pasaban mucho tiempo esperando ingredientes y la bodega
-terminó con **83 cebollas de sobra**: se pidió comprar 48 y se compraron **158**.
+**Seen:** with 50 dishes, orders spent a long time waiting for ingredients, and the warehouse
+ended with **83 spare onions**: 48 were asked for and **158** were bought.
 
-**Causa:**
+**Cause:**
 
-- Una compra grande (97 papas ≈ 40 llamadas, más esperas por los `0`) **superaba los 30 s de
-  visibilidad** del mensaje: SQS la daba por perdida y se la entregaba a un **segundo comprador**.
-- Una cola FIFO puede entregar varios mensajes del mismo grupo en un lote, y se procesaban en paralelo.
-- Cada comprador **sobrescribía** el progreso con su propio total.
+- A large purchase (97 potatoes ≈ 40 calls, plus the waits for the `0`s) **outlived the 30 s
+  visibility** of its message: SQS took it for lost and handed it to a **second buyer**.
+- A FIFO queue may hand several messages of the same group in one batch, and they ran in parallel.
+- Each buyer **overwrote** the progress with its own total.
 
-Los tests no lo detectaban porque usaban compras pequeñas, que nunca llegaban a los 30 s.
+The tests did not catch it because they used small purchases, which never reached 30 s.
 
-**Corrección:**
+**Fix:**
 
-1. **Compras por tramos** de ~10 s: ninguna entrega supera la visibilidad.
-2. **El consumidor respeta los grupos FIFO:** grupos distintos en paralelo, mismo grupo en orden.
-3. **Progreso por suma atómica** (`ADD`) en la misma escritura que registra cada venta.
-4. **Rondas de hasta 5 llamadas en paralelo**, según lo que falte (`⌈faltante / 2,5⌉`).
+1. **Purchases in slices** of ~10 s: no delivery outlives the visibility.
+2. **The consumer respects FIFO groups:** different groups in parallel, the same group in order.
+3. **Progress by atomic addition** (`ADD`), in the same write that records each sale.
+4. **Rounds of up to 5 parallel calls**, sized by what is missing (`⌈missing / 2.5⌉`).
 
-Una segunda medición encontró más cuellos de botella:
+A second measurement found more bottlenecks:
 
-| Se vio                                                                                                             | Corrección                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| Un proceso que se apagaba durante el *long polling* recibía un mensaje que ya no procesaría; quedaba oculto 30 s   | Al apagarse, cada trabajador **termina el mensaje en curso**; espera de 5 s y 30 s de margen        |
-| LocalStack **no bloquea el grupo FIFO** al recibir varios mensajes en un lote, aunque AWS sí                        | Varios trabajadores que toman **un mensaje cada uno**                                              |
-| Warehouse recibía un evento por cada llamada a la plaza y reevaluaba los 10 ingredientes en serie                  | Market publica **un evento por ronda** (93 → 27); warehouse evalúa solo lo necesario, en paralelo |
-| Errores transitorios reintentados hasta 30 s                                                                        | Tope de 10 s                                                                                       |
+| Seen                                                                                                                | Fix                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| A process shutting down during *long polling* got a message it would never handle; it stayed hidden 30 s           | On shutdown, each worker **finishes the message in hand**; 5 s polls and 30 s of grace               |
+| LocalStack **does not lock the FIFO group** when receiving several messages in one batch, although AWS does         | Several workers that take **one message each**                                                       |
+| The warehouse got one event per call to the market and re-evaluated the 10 ingredients one after another            | Market publishes **one event per round** (93 → 27); the warehouse evaluates only what it needs, in parallel |
+| Transient errors retried for up to 30 s                                                                              | A 10 s cap                                                                                           |
 
-**Resultado con 50 platos contra la plaza real:** sobras de 83 cebollas → **0 a 2**; errores 192 →
-**0**; tiempo total 165 s → **62 s**. El límite que quedó fue LocalStack (125-145 % de CPU,
-mientras los servicios estaban por debajo del 25 %).
+**Result with 50 dishes against the real market:** spare onions 83 → **0 to 2**; errors 192 →
+**0**; total time 165 s → **62 s**. The remaining limit was LocalStack (125-145 % CPU, while the
+services stayed below 25 %).
 
-#### Prueba de usuario: dos pedidos mezclados en una fila (v1.18)
+#### User test: two orders merged in one row (v1.18)
 
-**Se vio:** el historial del dashboard juntaba dos pedidos distintos en una sola fila.
+**Seen:** the dashboard's history put two different orders in one row.
 
-**Causa:** realtime, desplegado con el contrato anterior, **descartaba** el campo nuevo `batchId`
-de `OrderPlaced` antes de reenviarlo.
+**Cause:** realtime, deployed with the previous contract, **dropped** the new `batchId` field of
+`OrderPlaced` before forwarding it.
 
-**Corrección:** los contratos son **lectores tolerantes** (conservan los campos que no conocen), y
-la regla de versiones quedó explícita: agregar un campo opcional no cambia la versión.
+**Fix:** the contracts are **tolerant readers** (they keep the fields they do not know), and the
+versioning rule became explicit: adding an optional field does not change the version.
 
-### 18-19/10 — Realtime y dashboard
+### 18-19/10 — Realtime and dashboard
 
-- WebSocket con `ws` en local; el dashboard carga los datos de cada servicio y aplica los eventos (v1.16).
-- Las pruebas de usuario ajustaron la interfaz:
-  - compras como una sola tabla siempre visible (cuántas compras y cuántas unidades por ingrediente);
-  - historial como tabla resumen por pedido, con **todos** los platos servidos y sus cantidades;
-  - el aviso del pedido se borra al cambiar la cantidad.
+- WebSocket with `ws` locally; the dashboard loads the data of each service and applies the events (v1.16).
+- The user tests adjusted the interface:
+  - purchases as a single, always visible table (how many purchases and units per ingredient);
+  - the history as a summary table per order, with **every** dish served and its count;
+  - the order notice clears when the quantity changes.
 
 ### 19/10 — AWS
 
-- Adaptadores Lambda para cada servicio, que reutilizan las mismas reglas que el contenedor.
-- Un `serverless.yml` por servicio, el stack compartido `infra/aws`, el dashboard en S3 + CloudFront
-  y `npm run deploy:aws` para desplegarlo todo.
+- Lambda adapters for every service, reusing the same rules as the container.
+- One `serverless.yml` per service, the shared stack `infra/aws`, the dashboard on S3 +
+  CloudFront, and `npm run deploy:aws` to deploy it all.
 
-| Se vio                                                                                                              | Causa                                                                                         | Corrección                                                                                       |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Toda llamada en `us-east-1` era rechazada                                                                            | La organización del plan gratuito solo permite `us-east-2`                                    | Todo en `us-east-2` (v1.20)                                                                      |
-| La alerta de presupuesto nunca avisaría                                                                              | Por defecto descuenta los créditos: la factura neta siempre es US$0                           | La alerta cuenta el consumo **sin créditos** (v1.20)                                             |
-| La cuenta nueva solo permitía 10 Lambdas a la vez                                                                   | Límite inicial de las cuentas nuevas                                                          | Cada cola limitada a 2 mientras AWS aprobaba la ampliación a 1000 (v1.20)                       |
-| "The kitchen did not answer" al pedir desde el dashboard en AWS                                                      | CORS solo permitía `content-type`, y el pedido envía `Idempotency-Key`                        | El HTTP API permite ese encabezado                                                               |
-| Los últimos eventos de un pedido llegaban al dashboard **~20 s tarde**; el backend ya había entregado todo            | La cola de realtime tenía ventana de agrupación: con poco tráfico, el resto esperaba la siguiente consulta | Lotes de hasta 10 sin ventana: los eventos llegan en **~0,2 s** (v1.21)                        |
-| Serverless Compose no podía desplegar                                                                                | Guarda su estado a través de `us-east-1`                                                      | Un script despliega los stacks en orden; los servicios leen las salidas con `${cf:...}` (v1.22) |
-| Cualquier sitio podía llamar al API desde un navegador                                                               | CORS con `*`                                                                                  | Solo el dominio del dashboard (v1.22)                                                            |
-| AWS aprobó 1000 Lambdas a la vez                                                                                     | —                                                                                             | 10 ejecuciones reservadas por Lambda y hasta 10 por cola (v1.23)                                 |
-| Serverless advertía que la Lambda HTTP de market podía agotar los 30 s del API                                      | Heredaba el *timeout* de 30 s de la compra                                                    | 10 s para la consulta                                                                            |
+| Seen                                                                                                    | Cause                                                                                              | Fix                                                                                                |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Every call in `us-east-1` was rejected                                                                   | The free plan's organization only allows `us-east-2`                                             | Everything in `us-east-2` (v1.20)                                                                  |
+| The budget alert would never fire                                                                        | By default it subtracts the credits: the net bill is always US$0                                   | The alert counts usage **without credits** (v1.20)                                                 |
+| The new account allowed only 10 Lambdas at a time                                                        | The initial limit of new accounts                                                                  | Each queue capped at 2 while AWS approved the increase to 1000 (v1.20)                             |
+| "The kitchen did not answer" when ordering from the dashboard in AWS                                     | CORS only allowed `content-type`, and the order sends an `Idempotency-Key`                         | The HTTP API allows that header                                                                    |
+| An order's last events reached the dashboard **~20 s late**; the backend had already delivered everything | The realtime queue had a batching window: with little traffic, the rest waited for the next poll   | Batches of up to 10 without a window: events arrive in **~0.2 s** (v1.21)                          |
+| Serverless Compose could not deploy                                                                      | It keeps its state through `us-east-1`                                                             | A script deploys the stacks in order; the services read the outputs with `${cf:...}` (v1.22)       |
+| Any website could call the API from a browser                                                            | CORS with `*`                                                                                      | Only the dashboard's domain (v1.22)                                                                |
+| AWS approved 1000 Lambdas at a time                                                                      | —                                                                                                  | 10 reserved executions per Lambda and up to 10 per queue (v1.23)                                   |
+| Serverless warned that the market's HTTP Lambda could use up the API's 30 s                              | It inherited the 30 s timeout of the purchase                                                      | 10 s for the query                                                                                 |
 
-### 19/10 — Calidad
+### 19/10 — Quality
 
-- `npm run e2e` en local, en AWS y en el CI; `npm run load` con Artillery; README y ARCHITECTURE.
+- `npm run e2e` locally, in AWS and in the CI; `npm run load` with Artillery; README and ARCHITECTURE.
 
-| Se vio                                                                                     | Causa                                                                                              | Corrección                                                              |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Una prueba del consumidor FIFO falló en el CI y no en local                                | Solo detectaba el paralelismo si la papa **empezaba** durante una cebolla, no al revés              | Detecta la superposición en cualquier orden                             |
-| Avisos del SDK en cada prueba de integración de SQS                                        | LocalStack responde las URLs de las colas con su propio dominio                                     | Las pruebas usan siempre el endpoint configurado                        |
-| El aviso "50 dishes sent to the kitchen" seguía tras "New workday"                         | El formulario conservaba su estado entre jornadas                                                   | El formulario se reinicia con cada jornada                              |
-| El inventario mostraba "+1 on its way" con todos los platos entregados; el backend tenía 0 | La compra llega al dashboard y a warehouse a la vez: la relectura del inventario podía adelantarse | Una lectura más 1 s después del último cambio                           |
-| Al repetir la carga con la cuota ampliada, 40 platos quedaron **46 s detenidos**, sin errores y sin ninguna Lambda ejecutándose | Warehouse llegó a su tope de 10 Lambdas y su cola entregó 19 mensajes habiendo recibido solo 3: lo más probable es que AWS tomara mensajes que no alcanzó a pasarle a la Lambda, y quedaron ocultos los 60 s de visibilidad de la cola | Visibilidad de 60 a 20 s en las colas estándar, y **20 Lambdas** para la cola de warehouse, por donde pasan todos los platos y las compras (v2.1) |
+| Seen                                                                                     | Cause                                                                                             | Fix                                                                        |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| A test of the FIFO consumer failed in the CI and not locally                             | It only detected parallelism when the potato **started** during an onion, not the other way round | It detects the overlap in either order                                     |
+| SDK warnings in every SQS integration test                                               | LocalStack answers queue URLs on its own domain                                                   | The tests always use the configured endpoint                               |
+| The "50 dishes sent to the kitchen" notice stayed after "New workday"                    | The form kept its state between workdays                                                          | The form resets with every workday                                         |
+| The inventory showed "+1 on its way" with every dish delivered; the backend had 0        | A purchase reaches the dashboard and the warehouse at once: re-reading the inventory could get ahead | One more read 1 s after the last change                                 |
+| Repeating the load test with the raised quota, 40 dishes **stalled 46 s**, with no errors and no Lambda running | The warehouse reached its cap of 10 Lambdas and its queue handed out 19 messages after receiving only 3: most likely AWS took messages it could not pass to the Lambda, and they stayed hidden for the queue's 60 s visibility | Visibility from 60 to 20 s on the standard queues, and **20 Lambdas** for the warehouse queue, which every dish and purchase goes through (v2.1) |
 
-**Resultados en AWS:**
+**Results in AWS:**
 
-| Prueba                     | Resultado                                                                        |
-| -------------------------- | -------------------------------------------------------------------------------- |
-| End-to-end, 3 platos       | entregados en 7 a 13 s, según lo que venda la plaza                              |
-| Carga, 200 platos a la vez, cuenta con 10 Lambdas | 20/20 lotes aceptados, p95 de 400 ms; todos entregados en **1 min 48 s** |
-| La misma carga con la cuota ampliada, antes de corregir las colas | todos entregados en 82 s, con 46 s detenidos |
-| La misma carga con las colas corregidas (v2.1) | 20/20 lotes aceptados, p95 de 296 ms; todos entregados en **24 s** desde el primer lote |
-| Colas de mensajes inválidos | vacías                                                                          |
-| Stock final                | nunca negativo; pocas unidades de sobra                                          |
-| Créditos                   | centavos por prueba; ningún cobro                                                |
+| Test                                                    | Result                                                                            |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| End-to-end, 3 dishes                                    | delivered in 7 to 13 s, depending on what the market sells                        |
+| Load, 200 dishes at once, account with 10 Lambdas       | 20/20 batches accepted, p95 400 ms; all delivered in **1 min 48 s**               |
+| The same load with the raised quota, before fixing the queues | all delivered in 82 s, with 46 s stalled                                    |
+| The same load with the fixed queues (v2.1)              | 20/20 batches accepted, p95 296 ms; all delivered **24 s** after the first batch  |
+| Dead-letter queues                                      | empty                                                                             |
+| Final stock                                             | never negative; a few spare units                                                 |
+| Credits                                                 | cents per test; no charge                                                         |
 
-**p95** (percentil 95) es el tiempo en que se aceptó el 95% de los pedidos: solo el 5% más
-lento tardó más. Se usa en lugar del promedio porque el promedio esconde a los usuarios que
-esperaron mucho.
+**p95** (95th percentile) is the time within which 95% of the orders were accepted: only the
+slowest 5% took longer. It is used instead of the average because the average hides the users
+who waited a long time.
 
-En la última carga, 9 reservas chocaron sobre el mismo ingrediente (6 conflictos de transacción
-y 3 frenos momentáneos de DynamoDB por la cebolla, que está en todos los platos). Todas se
-reintentaron en 1 s y ningún plato se perdió.
+In the last load test, 9 reservations collided on the same ingredient (6 transaction conflicts
+and 3 brief DynamoDB throttles on onion, which is in every dish). All were retried within 1 s and
+no dish was lost.
 
-### 19-20/10 — Asistente de IA
+### 19-20/10 — AI assistant
 
-- Servicio `assistant` con TDD: resumen de la jornada, reglas para el modelo, caso de uso,
-  adaptadores (Gemini, APIs de consulta, contador en DynamoDB) y el panel de chat del dashboard.
+- The `assistant` service with TDD: the workday summary, the rules for the model, the use case,
+  the adapters (Gemini, the query APIs, a counter in DynamoDB) and the dashboard's chat panel.
 
-| Se vio                                                                                                                                  | Corrección                                                                                                                         |
-| --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Google no publica cuotas fijas para el plan gratuito de Gemini, y *function calling* gasta de 2 a 4 llamadas por pregunta              | **Contexto en una sola llamada**: el asistente resume la jornada y la envía con la pregunta (v2.2)                                 |
-| Algunos IDs de modelo conocidos ya estaban retirados                                                                                    | Se consultó la lista de modelos de la cuenta y se probaron tres con una llamada mínima; se fijó `gemini-3.5-flash-lite`, el más rápido |
-| Dos preguntas al mismo instante chocaban en el contador de DynamoDB, y la segunda se rechazaba aunque hubiera cupo                     | Ante un conflicto se reintenta; solo un contador lleno rechaza. Una prueba lanza 20 preguntas con límite de 5 y pasan exactamente 5 |
-| El panel prometía comparar con la jornada anterior, pero orders no ofrece la lista de jornadas pasadas                                  | El panel habla solo de la jornada actual; comparar jornadas queda como mejora                                                      |
+| Seen                                                                                                      | Fix                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Google does not publish fixed quotas for Gemini's free tier, and function calling spends 2 to 4 calls per question | **The context in a single call**: the assistant summarizes the workday and sends it with the question (v2.2)    |
+| Some well-known model IDs had already been retired                                                        | The account's model list was read and three models were tried with a minimal call; `gemini-3.5-flash-lite`, the fastest, was pinned |
+| Two questions at the same instant collided on the DynamoDB counter, and the second was refused although there was room | A conflict is retried; only a full counter refuses. A test sends 20 questions with a limit of 5 and exactly 5 get through |
+| The panel promised to compare with the previous workday, but orders offers no list of past workdays      | The panel only talks about the current workday; comparing workdays is left as an improvement                            |
+| A question in English got an answer in Spanish                                                            | The Spanish dish names chose the language: the rules now say a question in English gets an answer in English            |
+| "How long did the slowest order take?" could not be answered                                              | The summary had no batches: it now numbers each batch like the order history, with its time, dishes and duration       |
+| The dashboard's order history was not in time order (#40 at 19:30, #39 at 20:21)                         | It was numbered in the order the API answers, and orders are spread over partitions: it now sorts by the time placed    |
 
-**Primera pregunta real:** "¿Qué ingrediente compramos más y cuántos platos se han entregado?".
-Respondió en español en 3,8 s: "la papa, con 153 unidades en 14 compras… 100 platos". Los datos
-decían exactamente eso.
+**First real question:** "¿Qué ingrediente compramos más y cuántos platos se han entregado?". It
+answered in Spanish in 3.8 s: "potato, with 153 units in 14 purchases… 100 dishes". The data said
+exactly that.
+
+### 20/10 — Cleanup and translation
+
+| Seen                                                                                         | Fix                                                                                  |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 59 code comments pointed to planning sections that had changed number in v2.0               | Each one points to the current section; the 3 about the hexagonal layout point to ARCHITECTURE |
+| 8 exported types that no other file imports                                                  | They stay, without `export`: each is used in its own file                           |
+| knip (a tool that finds unused code) found no unused files, dependencies or variables       | —                                                                                    |
+
+PLANNING and this DEVLOG were translated to English, and ARCHITECTURE and AI to Spanish: every
+document exists in both languages (v2.3).
 
 ---
 
-## Versiones del plan
+## Plan versions
 
-| Versión | Fecha      | Cambio                                                                                                                                                         |
-| ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0     | 16/10/2026 | Planificación inicial aprobada                                                                                                                                 |
-| 1.1     | 16/10/2026 | Origen y justificación de las jornadas (no forman parte del enunciado). Se retira el riesgo del free tier de AWS                                              |
-| 1.2     | 16/10/2026 | Nuevo evento `OrderWaitingIngredients`: `StockShortage` es por ingrediente, así que no sirve para marcar qué pedido espera ni qué le falta                     |
-| 1.3     | 16/10/2026 | Justificación de la validación en tiempo de ejecución con zod                                                                                                 |
-| 1.4     | 16/10/2026 | Ante un duplicado, el handler **republica** el evento resultante                                                                                               |
-| 1.5     | 17/10/2026 | El pedido en espera suma a `waitingNeed` **todos** sus ingredientes, no solo los faltantes                                                                     |
-| 1.6     | 17/10/2026 | **Un faltante activo por ingrediente**; el faltante se guarda como pendiente junto con `inFlight` y se republica hasta publicarse                              |
-| 1.7     | 17/10/2026 | La reserva de un pedido que sale de la espera se guarda como **pendiente de publicar**                                                                         |
-| 1.8     | 17/10/2026 | La nueva jornada reinicia los contadores de demanda, y warehouse ignora las compras atrasadas de jornadas anteriores                                          |
-| 1.9     | 17/10/2026 | El catálogo de recetas de kitchen vive en el código, no en su tabla                                                                                           |
-| 1.10    | 17/10/2026 | El backoff de market usa **full jitter**                                                                                                                       |
-| 1.11    | 17/10/2026 | Los reintentos de market los hace la cola, con la DLQ sin `maxReceiveCount` y esperas en segundos enteros                                                      |
-| 1.12    | 18/10/2026 | El lote guarda sus `orderId` y los pedidos se escriben "si no existe"; `correlationId` = `orderId`                                                              |
-| 1.13    | 18/10/2026 | La jornada nueva queda pendiente de publicar; dos clics simultáneos reciben la misma jornada; warehouse solo atiende pedidos de la jornada que ya inició       |
-| 1.14    | 18/10/2026 | LocalStack fijado en 4.14.0. Segundo topic `shortages.fifo`, filtros por `type` y colas sin `maxReceiveCount`                                                  |
-| 1.15    | 18/10/2026 | Pedidos agrupados por jornada en 10 particiones y contador de pedidos en curso por jornada                                                                    |
-| 1.16    | 18/10/2026 | API de consulta en cada servicio dueño para el dashboard; realtime envía eventos y el inventario se vuelve a consultar                                         |
-| 1.17    | 18/10/2026 | Hallazgo de la prueba de usuario (compras duplicadas y lentas) y sus correcciones                                                                              |
-| 1.18    | 18/10/2026 | Los contratos son lectores tolerantes y regla de evolución de versiones                                                                                       |
-| 1.19    | 19/10/2026 | Cuenta de AWS con el plan gratuito y medidas para cuidar los créditos                                                                                          |
-| 1.20    | 19/10/2026 | Región `us-east-2`; la alerta de Budgets excluye los créditos; límite de Lambdas por cola mientras se amplía la cuota                                           |
-| 1.21    | 19/10/2026 | En AWS, realtime envía lotes de hasta 10 eventos sin ventana de agrupación                                                                                     |
-| 1.22    | 19/10/2026 | CORS solo para el dominio del dashboard; un script despliega los stacks en orden en lugar de Serverless Compose                                               |
-| 1.23    | 19/10/2026 | AWS amplió la cuota de Lambda a 1000; cada función reserva 10 ejecuciones y cada cola dispara hasta 10                                                         |
-| 2.0     | 19/10/2026 | El plan se divide en tres documentos: PLANNING (qué y por qué), ARCHITECTURE (cómo) y este DEVLOG (el camino)                                                 |
-| 2.1     | 19/10/2026 | La cola de warehouse reserva 20 Lambdas; las colas estándar devuelven en 20 s los mensajes que no alcanzaron a entregarse                                      |
-| 2.2     | 20/10/2026 | El asistente usa el contexto en una sola llamada en lugar de *function calling*; límite de preguntas por minuto y por día en DynamoDB                     |
+| Version | Date       | Change                                                                                                                                             |
+| ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0     | 16/10/2026 | First plan approved                                                                                                                                |
+| 1.1     | 16/10/2026 | Origin and reasons of the workdays (not part of the challenge). The AWS free tier risk is withdrawn                                               |
+| 1.2     | 16/10/2026 | New event `OrderWaitingIngredients`: `StockShortage` is per ingredient, so it cannot mark which order waits or what it misses                     |
+| 1.3     | 16/10/2026 | Reasons for runtime validation with zod                                                                                                            |
+| 1.4     | 16/10/2026 | A duplicate makes the handler **publish the resulting event again**                                                                                |
+| 1.5     | 17/10/2026 | A waiting order adds **every** ingredient to `waitingNeed`, not only the missing ones                                                             |
+| 1.6     | 17/10/2026 | **One active shortage per ingredient**; the shortage is saved as pending together with `inFlight` and published until it is marked as published   |
+| 1.7     | 17/10/2026 | The reservation of an order taken off the waiting list is saved as **pending to publish**                                                         |
+| 1.8     | 17/10/2026 | A new workday resets the demand counters, and the warehouse ignores late purchases of previous workdays                                            |
+| 1.9     | 17/10/2026 | The kitchen's recipe catalog lives in the code, not in its table                                                                                   |
+| 1.10    | 17/10/2026 | The market's backoff uses **full jitter**                                                                                                           |
+| 1.11    | 17/10/2026 | The queue does the market's retries, with a DLQ without `maxReceiveCount` and waits in whole seconds                                              |
+| 1.12    | 18/10/2026 | The batch keeps its `orderId`s and the orders are written "if absent"; `correlationId` = `orderId`                                                 |
+| 1.13    | 18/10/2026 | A new workday stays pending to publish; two simultaneous clicks get the same workday; the warehouse only serves orders of a workday it started    |
+| 1.14    | 18/10/2026 | LocalStack pinned to 4.14.0. A second topic `shortages.fifo`, filters by `type` and queues without `maxReceiveCount`                               |
+| 1.15    | 18/10/2026 | Orders grouped per workday in 10 partitions, and a counter of orders in progress per workday                                                      |
+| 1.16    | 18/10/2026 | A query API in each owning service for the dashboard; realtime sends events and the inventory is read again                                       |
+| 1.17    | 18/10/2026 | The user test finding (duplicated and slow purchases) and its fixes                                                                               |
+| 1.18    | 18/10/2026 | The contracts are tolerant readers, and the versioning rule                                                                                        |
+| 1.19    | 19/10/2026 | An AWS account on the free plan, and measures to protect the credits                                                                               |
+| 1.20    | 19/10/2026 | Region `us-east-2`; the Budgets alert leaves out the credits; a cap of Lambdas per queue while the quota is raised                                 |
+| 1.21    | 19/10/2026 | In AWS, realtime sends batches of up to 10 events without a batching window                                                                        |
+| 1.22    | 19/10/2026 | CORS only for the dashboard's domain; a script deploys the stacks in order instead of Serverless Compose                                           |
+| 1.23    | 19/10/2026 | AWS raised the Lambda quota to 1000; each function reserves 10 executions and each queue starts up to 10                                           |
+| 2.0     | 19/10/2026 | The plan splits into three documents: PLANNING (what and why), ARCHITECTURE (how) and this DEVLOG (the path)                                      |
+| 2.1     | 19/10/2026 | The warehouse queue reserves 20 Lambdas; the standard queues return in 20 s the messages that could not be handed over                            |
+| 2.2     | 20/10/2026 | The assistant uses the context in a single call instead of function calling; a limit of questions per minute and per day in DynamoDB              |
+| 2.3     | 20/10/2026 | Every document in English and in Spanish                                                                                                           |
