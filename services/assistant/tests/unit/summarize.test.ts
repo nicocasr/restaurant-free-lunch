@@ -173,6 +173,72 @@ describe('summarize', () => {
     ]);
   });
 
+  it('numbers the batches by the time they were placed, like the order history', () => {
+    const order = (batchId: string, placedAt: string, deliveredAt?: string) => ({
+      orderId: `${batchId}-${String(Math.random())}`,
+      status: deliveredAt ? 'DELIVERED' : 'PREPARING',
+      batchId,
+      placedAt,
+      ...(deliveredAt && { deliveredAt }),
+    });
+
+    const summary = summarize(
+      snapshot({
+        orders: [
+          // The API does not answer in time order.
+          order('second', '2026-10-20T14:40:00.000Z'),
+          order('first', '2026-10-20T14:30:00.000Z', '2026-10-20T14:30:20.000Z'),
+          order('first', '2026-10-20T14:30:00.000Z', '2026-10-20T14:31:13.000Z'),
+          order('second', '2026-10-20T14:40:00.000Z', '2026-10-20T14:40:09.000Z'),
+        ],
+      }),
+      NOW,
+    );
+
+    expect(summary.batches).toEqual([
+      // Times in Bogotá, as the manager sees them on the dashboard.
+      { batch: 1, placedAt: '09:30:00', dishes: 2, delivered: 2, tookSeconds: 73 },
+      { batch: 2, placedAt: '09:40:00', dishes: 2, delivered: 1, tookSeconds: undefined },
+    ]);
+  });
+
+  it('points out the batch that took the longest, and the quickest', () => {
+    const batch = (id: string, minute: number, seconds: number) => ({
+      orderId: id,
+      status: 'DELIVERED',
+      batchId: id,
+      placedAt: `2026-10-20T14:${String(minute).padStart(2, '0')}:00.000Z`,
+      deliveredAt: `2026-10-20T14:${String(minute).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.000Z`,
+    });
+
+    const summary = summarize(
+      snapshot({ orders: [batch('a', 1, 17), batch('b', 2, 59), batch('c', 3, 8)] }),
+      NOW,
+    );
+
+    expect(summary.slowestBatch).toEqual(expect.objectContaining({ batch: 2, tookSeconds: 59 }));
+    expect(summary.quickestBatch).toEqual(expect.objectContaining({ batch: 3, tookSeconds: 8 }));
+  });
+
+  it('keeps the 50 latest batches, but finds the slowest among all of them', () => {
+    const orders = Array.from({ length: 60 }, (_, index) => ({
+      orderId: `o${String(index)}`,
+      status: 'DELIVERED',
+      batchId: `b${String(index)}`,
+      placedAt: new Date(Date.parse('2026-10-20T10:00:00.000Z') + index * 60_000).toISOString(),
+      deliveredAt: new Date(
+        Date.parse('2026-10-20T10:00:00.000Z') + index * 60_000 + (index === 0 ? 50_000 : 5_000),
+      ).toISOString(),
+    }));
+
+    const summary = summarize(snapshot({ orders }), NOW);
+
+    expect(summary.batches).toHaveLength(50);
+    expect(summary.batches[0]?.batch).toBe(11);
+    expect(summary.batchesTotal).toBe(60);
+    expect(summary.slowestBatch).toEqual(expect.objectContaining({ batch: 1, tookSeconds: 50 }));
+  });
+
   it('describes a workday that has not started yet', () => {
     const summary = summarize(snapshot({ workdayId: undefined }), NOW);
 
