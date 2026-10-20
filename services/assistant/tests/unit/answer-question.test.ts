@@ -1,5 +1,6 @@
 import {
   answerQuestion,
+  AssistantUnavailableError,
   InvalidQuestionError,
   TooManyQuestionsError,
 } from '../../src/application/answer-question';
@@ -106,6 +107,40 @@ describe('answerQuestion', () => {
     await expect(ask(question)).rejects.toThrow(InvalidQuestionError);
     expect(takenAt).toHaveLength(0);
     expect(prompts).toHaveLength(0);
+  });
+
+  it('tells the manager in plain words when the model cannot answer', async () => {
+    const ask = answerQuestion({
+      operations: { read: () => Promise.resolve(SNAPSHOT) },
+      model: {
+        answer: () => Promise.reject(new AssistantUnavailableError('the free quota is used up')),
+      },
+      limiter: { take: () => Promise.resolve(true) },
+    });
+
+    await expect(ask('What did we buy?')).rejects.toThrow(
+      'The assistant cannot answer right now (the free quota is used up). Try again in a minute.',
+    );
+  });
+
+  it('counts the question at the current time when no clock is given', async () => {
+    const takenAt: Date[] = [];
+    const ask = answerQuestion({
+      operations: { read: () => Promise.resolve(SNAPSHOT) },
+      model: { answer: () => Promise.resolve('ok') },
+      limiter: {
+        take: (now) => {
+          takenAt.push(now);
+          return Promise.resolve(true);
+        },
+      },
+    });
+    const before = Date.now();
+
+    await ask('What did we buy?');
+
+    expect(takenAt[0]?.getTime()).toBeGreaterThanOrEqual(before);
+    expect(takenAt[0]?.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   it('lets a failure of the model reach the caller', async () => {
