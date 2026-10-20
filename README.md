@@ -53,8 +53,15 @@ What keeps it correct under thousands of simultaneous orders:
 - **Failures retry, invalid messages do not.** Errors go back to the queue with exponential
   backoff; a message that breaks the contract goes to a dead-letter queue.
 
-The same domain and use cases run in two ways: as containers (`node:http` plus an SQS poller) on
-your machine, and as AWS Lambda functions in the cloud. Only the entrypoints differ.
+The business rules of each service are written once and run unchanged in two places:
+
+- **On your machine**, each service is a container that is always on: it answers HTTP requests
+  with `node:http` and keeps asking its SQS queue for new messages.
+- **In AWS**, nothing is always on: a Lambda function starts only when a request or a message
+  arrives, and stops when it is done.
+
+Only the thin layer that receives requests and messages (`entrypoints/`) differs, so a fix in
+the rules works in both places at once.
 
 ## Run it locally
 
