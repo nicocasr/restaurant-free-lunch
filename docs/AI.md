@@ -1,5 +1,7 @@
 # Operations assistant (AI)
 
+> **Versión en español:** [AI.es.md](AI.es.md).
+
 The manager running the free lunch day is not technical, and during the event has no time to
 read tables. The assistant lets them ask in plain words and get a short answer from the live
 data of the workday:
@@ -38,8 +40,9 @@ sequenceDiagram
 3. **It reads the workday** from the query API of each service that owns the data, the same
    APIs the dashboard uses. The assistant never reads another service's table.
 4. **It summarizes the data** (`summarize.ts`): orders by status, dishes delivered by recipe, the
-   20 oldest waiting dishes with what they miss and for how long, the stock with what is on its
-   way, purchases by ingredient and the recipes. Counts instead of every order, so a question
+   20 oldest waiting dishes with what they miss and for how long, each batch (one click of the
+   button) numbered like the order history with its time and duration, the slowest and quickest
+   batch, the stock with what is on its way, purchases by ingredient and the recipes. Counts instead of every order, so a question
    costs the same small call whether 10 or 10,000 dishes were ordered.
 5. **It asks Gemini once** with the rules, the summary and the question.
 
@@ -68,7 +71,9 @@ them. The model must:
 - answer **only from the data** that comes with the question, and say so when the data does
   not answer it;
 - **never invent** numbers, dishes or ingredients;
-- answer in the **language of the question**, in at most four short sentences or a short list;
+- answer in the **language of the question**, in at most four short sentences or a short list.
+  The dish names are Spanish, so the rules say it plainly: a question in English gets an answer
+  in English;
 - refuse to change anything: it can place no orders, and says the dashboard does that.
 
 The rules also explain how the day works (the statuses of a dish, why dishes wait, why the market
@@ -116,6 +121,9 @@ aws ssm put-parameter --region us-east-2 --type SecureString \
 - **By hand:** asked "¿Qué ingrediente compramos más y cuántos platos se han entregado?", it
   answered in Spanish "la papa, con 153 unidades en 14 compras… 100 platos", and the data said
   exactly that: potato, 153 units in 14 purchases, 100 dishes delivered.
+- **By hand, again:** asked "cuanto tardo la orden que tardo más en completar?", it answered "batch
+  1 (100 dishes)… 173 seconds, placed at 19:32:54", the same batch, time and duration as the
+  order history.
 
 ## Limits, honestly
 

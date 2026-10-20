@@ -1,5 +1,7 @@
 # Architecture
 
+> **Versión en español:** [ARCHITECTURE.es.md](ARCHITECTURE.es.md).
+
 How Free Lunch Day is built and why it stays correct when thousands of dishes are ordered at
 once. The reasons behind each decision, and the alternatives that were discarded, are in
 [PLANNING.md](PLANNING.md), and how the design evolved, with what each test found, is in
