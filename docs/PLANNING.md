@@ -1,259 +1,267 @@
-# Jornada de Almuerzo Gratis — Planificación
+# Free Lunch Day — Planning
 
-> Qué se quiere lograr, qué se decidió y por qué, y el plan de trabajo. Se escribió **antes de
-> la primera línea de código** y se actualizó con lo aprendido en el camino.
+> What the project sets out to do, what was decided and why, and the work plan. It was written
+> **before the first line of code** and updated with what was learned along the way.
 >
-> - **Cómo está construido:** [ARCHITECTURE.md](ARCHITECTURE.md).
-> - **Cómo evolucionó** (cada versión de este plan, lo que encontraron las pruebas y lo que se
->   cambió por ello): [DEVLOG.md](DEVLOG.md).
+> - **How it is built:** [ARCHITECTURE.md](ARCHITECTURE.md).
+> - **How it evolved** (every version of this plan, what the tests found and what changed
+>   because of it): [DEVLOG.md](DEVLOG.md).
+> - **Versión en español:** [PLANNING.es.md](PLANNING.es.md).
 
 ---
 
-## 1. Entendimiento del problema
+## 1. Understanding the problem
 
-Un restaurante regala almuerzos durante una jornada masiva. Hoy el flujo es manual:
+A restaurant gives away lunches during a massive one-day event. Today the flow is manual:
 
 ```
-Gerente presiona botón → Cocina elige receta al azar → pide ingredientes a la Bodega
-→ si faltan, la Bodega compra en la Plaza de mercado → Cocina prepara y entrega
+Manager presses a button → Kitchen picks a random recipe → asks the Warehouse for ingredients
+→ if some are missing, the Warehouse buys them at the Farmers market → Kitchen cooks and serves
 ```
 
-**Objetivo:** automatizar el flujo al 100%. Debe soportar miles de comensales y permitir
-que el gerente, que no es técnico, vea la operación en tiempo real.
+**Goal:** automate the whole flow. It must handle thousands of diners and let the manager, who
+is not technical, follow the operation in real time.
 
-### Reglas de negocio (del enunciado)
+### Business rules (from the challenge)
 
-| #   | Regla                                                                                                                    |
-| --- | ------------------------------------------------------------------------------------------------------------------------ |
-| R1  | El gerente pide **X platos** con un botón.                                                                               |
-| R2  | Cada plato recibe una receta **aleatoria** entre 6.                                                                      |
-| R3  | Cada receta usa ingredientes de: tomato, lemon, potato, rice, ketchup, lettuce, onion, cheese, meat, chicken.            |
-| R4  | La bodega **inicia con 5 unidades** de cada ingrediente.                                                                 |
-| R5  | Si falta stock, se compra en la plaza (`GET https://recruitment.alegra.com/api/farmers-market/buy?ingredient=<name>`).   |
-| R6  | La plaza responde `{ quantitySold }`. Si es `0` no hay disponibilidad; la compra es exitosa si es un entero > 0.         |
-| R7  | El plato se entrega **solo cuando están todos sus ingredientes**; al prepararlo, se descuentan del inventario.           |
+| #   | Rule                                                                                                                       |
+| --- | -------------------------------------------------------------------------------------------------------------------------- |
+| R1  | The manager orders **X dishes** with a button.                                                                             |
+| R2  | Each dish gets a **random** recipe out of 6.                                                                               |
+| R3  | Each recipe uses ingredients from: tomato, lemon, potato, rice, ketchup, lettuce, onion, cheese, meat, chicken.            |
+| R4  | The warehouse **starts with 5 units** of each ingredient.                                                                  |
+| R5  | When stock is short, it is bought at the market (`GET https://recruitment.alegra.com/api/farmers-market/buy?ingredient=<name>`). |
+| R6  | The market answers `{ quantitySold }`. `0` means none available; a purchase succeeds when it is an integer > 0.            |
+| R7  | A dish is served **only when all its ingredients are there**; preparing it deducts them from the inventory.                |
 
-### Requisitos no funcionales
+### Non-functional requirements
 
-- Microservicios en Node.js + TypeScript, **sin Express/Nest ni frameworks similares**.
-- Cada microservicio con su **Dockerfile**, más despliegue **Serverless** (PLUS).
-- **Persistencia** que sobreviva reinicios.
-- **Escalabilidad y robustez**: muchos pedidos simultáneos sin fallar.
-- Despliegue público en **AWS** sin costo.
-- **Bonus IA** integrado y funcional en el despliegue.
+- Microservices in Node.js + TypeScript, **without Express, Nest or similar frameworks**.
+- Each microservice with its own **Dockerfile**, plus a **Serverless** deployment (a PLUS).
+- **Persistence** that survives restarts.
+- **Scalability and robustness**: many simultaneous orders without failing.
+- A public deployment on **AWS** at no cost.
+- An **AI bonus**, integrated and working in the deployment.
 
-**Fechas:** reto recibido el **15/10/2026**; entrega a más tardar el **22/10/2026**.
-
----
-
-## 2. Decisiones tomadas
-
-### Tecnología y forma de trabajo
-
-| Tema             | Decisión                                                                                         | Motivo                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| Arquitectura     | **Hexagonal** (puertos y adaptadores); cada servicio corre en Docker (local) y en Lambda (nube)  | Cumple Docker y Serverless con el mismo núcleo de dominio: solo cambian los *entrypoints*    |
-| Lenguaje         | TypeScript (strict)                                                                              | Seguridad de tipos y mejor soporte para TDD                                                  |
-| Runtime          | Node.js 24 LTS (`nodejs24.x` en Lambda)                                                          | La versión más reciente que soporta Lambda; la misma en local, Docker y nube                 |
-| Monorepo         | npm workspaces                                                                                   | Viene con Node, sin herramientas extra                                                       |
-| HTTP             | Módulo nativo `node:http` con un router mínimo propio                                            | El reto prohíbe Express, Nest y similares                                                    |
-| WebSocket local  | Librería `ws` sobre `node:http`                                                                  | Librería sin dependencias, no un framework; en AWS se usa API Gateway WebSocket              |
-| Validación       | zod (librería, no framework)                                                                     | Valida en ejecución lo que entra de afuera (ver §3.6)                                        |
-| Frontend         | React + Vite                                                                                     | —                                                                                            |
-| Testing          | Jest (+ ts-jest) con TDD                                                                         | Red → Green → Refactor en dominio y casos de uso                                             |
-| Prueba de carga  | Artillery                                                                                        | Escenarios en YAML; corre sobre Node                                                         |
-| Calidad          | ESLint + Prettier                                                                                | Estilo consistente y verificado en CI                                                        |
-| CI               | GitHub Actions: formato, lint, tipos, tests, build, integración y E2E sobre los contenedores    | Valida cada push automáticamente                                                             |
-| Commits          | Conventional Commits; `test:` (rojo) y `feat:` (verde) por separado                              | El ciclo TDD queda visible en el historial de Git                                            |
-| Idioma           | **Inglés** en código, documentación, commits e interfaz                                          | Estándar en equipos. Este documento y el DEVLOG se traducen como **último paso**             |
-| Repositorio      | `alegra-lunch` (privado)                                                                         | —                                                                                            |
-| IA               | Asistente operativo conversacional con **Gemini** (free tier)                                    | Costo cero; responde con datos reales del sistema (ver §5)                                   |
-| Menú             | 6 platos bogotanos (ver §4)                                                                      | —                                                                                            |
-
-### Infraestructura
-
-| Tema                 | Decisión                                                                                                                                         | Motivo                                                                                                                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Bus de eventos       | **SNS → SQS** (fan-out), una cola por servicio con DLQ                                                                                           | Publicar una vez y que cada consumidor tenga su cola; agregar consumidores no modifica al productor (ver §3.2)                                                                                                         |
-| Base de datos        | DynamoDB on-demand, **una tabla por servicio**                                                                                                  | Escala sola, sin servidores ni capacidad que administrar; cada servicio es dueño de sus datos                                                                                                                           |
-| IaC / despliegue     | Serverless Framework **v4**: un `serverless.yml` por servicio más el stack compartido `infra/aws`; `npm run deploy:aws` los despliega en orden | Mencionado en el reto. No se usa Serverless Compose (la herramienta para desplegar varios servicios juntos): no funciona con las restricciones de región de la cuenta ([DEVLOG](DEVLOG.md)), y no hace falta, porque cada servicio lee de CloudFormation lo que necesita del stack compartido |
-| Emulación local      | LocalStack **4.14.0** (SQS, SNS, DynamoDB), versión fijada                                                                                       | Mismos adaptadores en local y en la nube. Las versiones posteriores exigen cuenta y *auth token*; la 4.14.0 es la última que arranca sin token, así que los reviewers corren `docker compose up` sin registrarse (§9) |
-| Tiempo real          | API Gateway WebSocket                                                                                                                            | El servidor empuja cada cambio al instante                                                                                                                                                                              |
-| Dashboard en AWS     | S3 privado + CloudFront                                                                                                                          | HTTPS y la capa siempre gratis de CloudFront                                                                                                                                                                            |
-| Cuenta de AWS        | Cuenta con el **plan gratuito** (`FREE`, créditos hasta el 19/04/2027), en `us-east-2`                                                          | El plan gratuito **no puede generar facturas**: si los créditos se agotaran, la cuenta se pausa. La organización de la cuenta solo permite `us-east-2`                                                                  |
-
-### Costo cero
-
-Que los créditos duren y que un abuso no pueda agotarlos (eso pausaría la cuenta durante la evaluación):
-
-- sin VPC ni NAT Gateway; DynamoDB on-demand sin PITR ni streams; sin X-Ray;
-- logs con retención de 7 días;
-- *reserved concurrency* de 10 por Lambda (gratis, a diferencia de la *provisioned*) y hasta 10 Lambdas por cola; 20 para la cola de warehouse, por donde pasan todos los platos y las compras;
-- *throttling* en el HTTP API (50 peticiones/s, picos de 100) y CORS solo para el dominio del dashboard;
-- secretos en SSM estándar;
-- alerta de AWS Budgets si el mes se proyecta sobre US$10, **sin descontar los créditos** (si los incluyera, la factura neta sería US$0 y nunca avisaría).
-
-Costo conocido y aceptado: las Lambdas que leen SQS consultan las colas aunque no haya mensajes (~US$1,30 al mes en créditos).
-
-### Producto
-
-| Tema                 | Decisión                                                                                                                                                                    | Motivo                                                                                                       |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Compras en la plaza  | **Demanda agregada por ingrediente**: la bodega solo pide comprar lo que falta, descontando el stock y lo que ya está en camino                                             | La plaza decide cuánto vende; comprar por pedido generaría compras innecesarias (§3.3)                     |
-| Lista de espera      | **FIFO flexible**                                                                                                                                                           | Prioriza el throughput: si el pedido más antiguo no alcanza, se atiende al siguiente que sí (§3.3)         |
-| Idempotencia         | **La base de datos es el árbitro** (escrituras condicionales)                                                                                                              | Las Lambdas no comparten memoria; solo la BD ve todos los intentos (§3.4)                                  |
-| Plaza sin stock      | Reintentos **indefinidos** con *backoff* exponencial y *full jitter*, tope de **10 s**                                                                                     | La plaza eventualmente vende; el pedido espera, nunca falla                                                |
-| Jornadas             | Botón **"Nueva jornada"**, solo sin pedidos en curso: reinicia la bodega a 5 y conserva el historial por jornada                                                          | Concilia "la bodega inicia con 5" con la persistencia (§3.5)                                               |
-| Datos del dashboard  | Al abrirse, carga con la API de consulta **de cada servicio dueño** (`/orders`, `/inventory`, `/purchases`, `/recipes`) y luego aplica los eventos que llegan por WebSocket | Respeta que cada servicio es dueño de sus datos. Los eventos no llevan el stock completo: el inventario se vuelve a consultar |
-| Envío al dashboard   | realtime agrupa los eventos (~500 ms en el contenedor; lotes de hasta 10 en AWS)                                                                                           | Para el ojo humano sigue siendo tiempo real, y no satura el navegador                                      |
-| Tamaño del pedido    | Límite máximo **configurable** y validado                                                                                                                                  | Protege el sistema de pedidos absurdos                                                                     |
-| Acceso               | Sin login; *rate limiting* en la API y en el asistente                                                                                                                     | Facilita las pruebas de usuario y protege la operación y la cuota de Gemini                               |
-| Tiempo en espera     | El dashboard muestra, por pedido en espera, cuánto lleva esperando y qué le falta                                                                                          | Con la FIFO flexible, deja visible cualquier pedido que se demore                                          |
+**Dates:** challenge received on **15/10/2026**; due on **22/10/2026** at the latest.
 
 ---
 
-## 3. Diseño: los problemas y cómo se resuelven
+## 2. Decisions
 
-El detalle de cada mecanismo está en [ARCHITECTURE.md](ARCHITECTURE.md). Aquí va el problema
-que resuelve, la decisión y lo que se descartó.
+### Technology and way of working
 
-### 3.1 Microservicios
+| Topic           | Decision                                                                                        | Reason                                                                                   |
+| --------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Architecture    | **Hexagonal** (ports and adapters); each service runs in Docker (locally) and in Lambda (cloud) | Meets Docker and Serverless with the same domain core: only the entrypoints change       |
+| Language        | TypeScript (strict)                                                                             | Type safety and better support for TDD                                                   |
+| Runtime         | Node.js 24 LTS (`nodejs24.x` in Lambda)                                                         | The newest version Lambda supports; the same locally, in Docker and in the cloud         |
+| Monorepo        | npm workspaces                                                                                  | Comes with Node, no extra tools                                                          |
+| HTTP            | The native `node:http` module with a small router of our own                                    | The challenge forbids Express, Nest and similar                                          |
+| Local WebSocket | The `ws` library on `node:http`                                                                 | A library without dependencies, not a framework; AWS uses API Gateway WebSocket          |
+| Validation      | zod (a library, not a framework)                                                                | Validates at runtime whatever comes from outside (see §3.6)                              |
+| Frontend        | React + Vite                                                                                    | —                                                                                        |
+| Testing         | Jest (+ ts-jest) with TDD                                                                       | Red → Green → Refactor on the domain and the use cases                                   |
+| Load test       | Artillery                                                                                       | Scenarios in YAML; runs on Node                                                          |
+| Quality         | ESLint + Prettier                                                                               | Consistent style, checked in CI                                                          |
+| CI              | GitHub Actions: format, lint, types, tests, build, integration and E2E on the containers       | Checks every push automatically                                                          |
+| Commits         | Conventional Commits; `test:` (red) and `feat:` (green) apart                                   | The TDD cycle stays visible in the Git history                                           |
+| Language        | **English** in code, documentation, commits and interface                                       | The team standard. Every document also exists in Spanish                                 |
+| Repository      | `alegra-lunch` (private)                                                                        | —                                                                                        |
+| AI              | A conversational operations assistant with **Gemini** (free tier)                               | Zero cost; answers with the real data of the system (see §5)                             |
+| Menu            | 6 dishes from Bogotá (see §4)                                                                   | —                                                                                        |
 
-Un *bounded context* por servicio y **una tabla por servicio**: ningún servicio lee ni escribe
-la tabla de otro.
+### Infrastructure
 
-| Servicio      | Responsabilidad                                                          |
+| Topic              | Decision                                                                                                                                       | Reason                                                                                                                                                                                                               |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Event bus          | **SNS → SQS** (fan-out), one queue per service with a DLQ                                                                                      | Publish once and give each consumer its own queue; adding consumers does not touch the producer (see §3.2)                                                                                                         |
+| Database           | DynamoDB on demand, **one table per service**                                                                                                  | Scales on its own, with no servers or capacity to manage; each service owns its data                                                                                                                                 |
+| IaC / deployment   | Serverless Framework **v4**: one `serverless.yml` per service plus the shared stack `infra/aws`; `npm run deploy:aws` deploys them in order | Named in the challenge. Serverless Compose (the tool to deploy several services together) is not used: it does not work with the region restrictions of the account ([DEVLOG](DEVLOG.md)), and it is not needed, since each service reads what it needs of the shared stack from CloudFormation |
+| Local emulation    | LocalStack **4.14.0** (SQS, SNS, DynamoDB), pinned                                                                                             | The same adapters locally and in the cloud. Later versions require an account and an auth token; 4.14.0 is the last one that starts without one, so reviewers run `docker compose up` without signing up (§9)     |
+| Real time          | API Gateway WebSocket                                                                                                                          | The server pushes every change at once                                                                                                                                                                               |
+| Dashboard in AWS   | Private S3 + CloudFront                                                                                                                        | HTTPS and the always-free tier of CloudFront                                                                                                                                                                         |
+| AWS account        | An account on the **free plan** (`FREE`, credits until 19/04/2027), in `us-east-2`                                                             | The free plan **cannot produce bills**: if the credits ran out, the account would pause. The account's organization only allows `us-east-2`                                                                          |
+
+### Zero cost
+
+So that the credits last, and an abuse cannot exhaust them (that would pause the account during
+the review):
+
+- no VPC or NAT Gateway; DynamoDB on demand without PITR or streams; no X-Ray;
+- logs kept 7 days;
+- *reserved concurrency* of 10 per Lambda (free, unlike *provisioned*) and up to 10 Lambdas per
+  queue; 20 for the warehouse queue, which every dish and every purchase goes through;
+- *throttling* on the HTTP API (50 requests/s, bursts of 100) and CORS only for the dashboard's
+  domain;
+- secrets in standard SSM;
+- an AWS Budgets alert when the month is projected over US$10, **without subtracting the
+  credits** (if it counted them, the net bill would be US$0 and it would never alert).
+
+A known and accepted cost: the Lambdas that read SQS poll the queues even when there are no
+messages (~US$1.30 a month in credits).
+
+### Product
+
+| Topic               | Decision                                                                                                                                                         | Reason                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Market purchases    | **Aggregated demand per ingredient**: the warehouse only asks to buy what is missing, minus the stock and what is already on its way                             | The market decides how much it sells; buying per order would make needless purchases (§3.3)            |
+| Waiting list        | **Flexible FIFO**                                                                                                                                                | Favors throughput: if the oldest order cannot be served, the next one that can goes first (§3.3)       |
+| Idempotency         | **The database is the arbiter** (conditional writes)                                                                                                             | Lambdas share no memory; only the database sees every attempt (§3.4)                                    |
+| Market out of stock | **Endless** retries with exponential backoff and full jitter, capped at **10 s**                                                                                 | The market sells eventually; the order waits, it never fails                                             |
+| Workdays            | A **"New workday"** button, only with no order in progress: resets the warehouse to 5 and keeps the history per workday                                         | Reconciles "the warehouse starts with 5" with persistence (§3.5)                                          |
+| Dashboard data      | On opening, it loads from the query API **of each owning service** (`/orders`, `/inventory`, `/purchases`, `/recipes`), then applies the events from the WebSocket | Respects that each service owns its data. Events do not carry the whole stock: the inventory is read again |
+| Push to dashboard   | realtime batches the events (~500 ms in the container; batches of up to 10 in AWS)                                                                              | Still real time to the human eye, without flooding the browser                                           |
+| Order size          | A **configurable** maximum, validated                                                                                                                            | Protects the system from absurd orders                                                                   |
+| Access              | No login; *rate limiting* on the API and on the assistant                                                                                                        | Makes user tests easy and protects the operation and the Gemini quota                                    |
+| Waiting time        | The dashboard shows, for each waiting order, how long it has waited and what it misses                                                                          | With the flexible FIFO, any order that lags behind stays visible                                         |
+
+---
+
+## 3. Design: the problems and how they are solved
+
+The details of each mechanism are in [ARCHITECTURE.md](ARCHITECTURE.md). Here: the problem it
+solves, the decision and what was discarded.
+
+### 3.1 Microservices
+
+One *bounded context* per service and **one table per service**: no service reads or writes
+the table of another.
+
+| Service       | Responsibility                                                           |
 | ------------- | ------------------------------------------------------------------------ |
-| **orders**    | API del gerente: lotes de pedidos, jornadas e historial                  |
-| **kitchen**   | Elige la receta al azar, pide los ingredientes y entrega el plato        |
-| **warehouse** | Inventario, reserva **atómica**, lista de espera y demanda agregada      |
-| **market**    | Compra en la plaza con reintentos; historial de compras                  |
-| **realtime**  | Empuja los eventos al dashboard por WebSocket                            |
-| **assistant** | Asistente IA (§5)                                                        |
-| **web**       | Dashboard React del gerente                                              |
+| **orders**    | Manager API: batches of orders, workdays and history                     |
+| **kitchen**   | Picks the recipe at random, asks for the ingredients and serves the dish |
+| **warehouse** | Inventory, **atomic** reservation, waiting list and aggregated demand    |
+| **market**    | Buys at the market with retries; purchase history                        |
+| **realtime**  | Pushes the events to the dashboard over WebSocket                        |
+| **assistant** | AI assistant (§5)                                                        |
+| **web**       | The manager's React dashboard                                            |
 
-### 3.2 Comunicación por eventos (coreografía)
+### 3.2 Communication through events (choreography)
 
-**Problema:** si un servicio llama directo a otro, una caída o una carga alta de uno detiene a
-los demás.
+**Problem:** if a service calls another directly, one going down or getting overloaded stops
+the others.
 
-**Decisión:** eventos por **SNS → SQS**, con una cola por servicio consumidor. Si un consumidor
-cae, sus mensajes esperan en su cola. Cada suscripción filtra por el tipo de evento.
+**Decision:** events over **SNS → SQS**, with one queue per consuming service. If a consumer goes
+down, its messages wait in its queue. Each subscription filters by event type.
 
-- **Dos topics:** AWS no permite que una cola **FIFO** se suscriba a un topic estándar, y la
-  cola de market es FIFO. `StockShortage` va por `shortages.fifo` y el resto por `events`.
-- **Contratos versionados** en `packages/contracts`, validados al publicar y al recibir.
-  Son **lectores tolerantes**: agregar un campo opcional no cambia la versión.
+- **Two topics:** AWS does not let a **FIFO** queue subscribe to a standard topic, and the
+  market's queue is FIFO. `StockShortage` goes through `shortages.fifo` and everything else
+  through `events`.
+- **Versioned contracts** in `packages/contracts`, validated when publishing and when receiving.
+  They are **tolerant readers**: adding an optional field does not change the version.
 
-| Alternativa           | Por qué se descarta                                                      |
-| --------------------- | ------------------------------------------------------------------------ |
-| Llamadas HTTP directas | Acopla la disponibilidad de los servicios                               |
-| Un orquestador central | Un punto único de falla y de cuello de botella; Step Functions cobra por transición |
+| Alternative             | Why it is discarded                                                          |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| Direct HTTP calls       | Ties the availability of the services together                               |
+| A central orchestrator  | A single point of failure and a bottleneck; Step Functions charges per transition |
 
-### 3.3 Concurrencia (el punto crítico)
+### 3.3 Concurrency (the critical point)
 
-| Riesgo                                       | Decisión                                                                                                              |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Miles de clics o pedidos de golpe            | `POST /orders` responde **202** de inmediato y el trabajo se encola; *throttling* en API Gateway                    |
-| Dos pedidos consumen la misma unidad         | Reserva **todo o nada** en una sola transacción de DynamoDB, con la condición `stock >= n` en cada ingrediente     |
-| Avalancha de compras del mismo ingrediente   | **Un solo faltante activo por ingrediente** por la demanda acumulada, y cola FIFO agrupada por ingrediente         |
-| La plaza responde `0`                        | Reintentos indefinidos con *backoff*; los hace la cola (`ChangeMessageVisibility`), no un proceso dormido          |
-| Un pedido antiguo bloquea a los demás        | Lista de espera **FIFO flexible**: el más antiguo tiene la primera oportunidad, pero no bloquea                    |
-| Miles de eventos hacia el dashboard          | realtime agrupa los eventos; el frontend descarta los ya aplicados                                                 |
+| Risk                                       | Decision                                                                                                        |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Thousands of clicks or orders at once      | `POST /orders` answers **202** at once and the work is queued; *throttling* on API Gateway                     |
+| Two orders take the same unit              | An **all-or-nothing** reservation in one DynamoDB transaction, with the condition `stock >= n` on each ingredient |
+| A flood of purchases of the same ingredient | **One active shortage per ingredient** for the accumulated demand, and a FIFO queue grouped by ingredient      |
+| The market answers `0`                     | Endless retries with backoff, done by the queue (`ChangeMessageVisibility`), not by a sleeping process         |
+| An old order blocks the rest               | A **flexible FIFO** waiting list: the oldest gets the first chance, but does not block                          |
+| Thousands of events toward the dashboard   | realtime batches the events; the frontend drops the ones it already applied                                     |
 
-**Por qué un solo faltante activo:** la plaza decide cuánto vende. Si cada pedido emitiera su
-propio faltante, 3 Changuas seguidas generarían 3 compras de 1 cebolla, y market, que no conoce
-el stock, las compraría las tres aunque la primera trajera suficiente. Con la demanda agregada,
-200 platos esperando cebolla generan 2 faltantes, no 200.
+**Why a single active shortage:** the market decides how much it sells. If each order raised its
+own shortage, 3 Changuas in a row would make 3 purchases of 1 onion, and the market service,
+which does not know the stock, would buy all three even if the first brought enough. With the
+aggregated demand, 200 dishes waiting for onion make 2 shortages, not 200.
 
-**Por qué la espera suma todos los ingredientes del pedido y no solo los faltantes:** un Ajiaco
-espera cebolla, pero sí había papa. Mientras espera, otros pedidos gastan la papa. Si la demanda
-de papa no incluyera al Ajiaco, nadie la compraría y el pedido quedaría atascado para siempre.
+**Why a waiting order adds every ingredient of its recipe and not only the missing ones:** an
+Ajiaco waits for onion, but there was potato. While it waits, other orders use up the potato. If
+the potato demand did not include the Ajiaco, nobody would buy potato and the order would be
+stuck forever.
 
-| Alternativa descartada                  | Por qué                                                                                   |
-| --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Bodega con un único consumidor          | Más simple, pero convierte la bodega en un cuello de botella secuencial                   |
-| FIFO estricto en la espera              | Un pedido atascado detendría toda la cocina (*head-of-line blocking*)                     |
-| Dormir dentro de la Lambda al reintentar | Se paga cada segundo dormido y Lambda corta a los 15 minutos                             |
-| Reencolar con `DelaySeconds`            | Las colas FIFO no aceptan retraso por mensaje                                             |
-| Step Functions con estados `Wait`       | Otro servicio, cobra por transición y LocalStack lo emula a medias                        |
+| Discarded alternative                   | Why                                                                                  |
+| --------------------------------------- | ------------------------------------------------------------------------------------ |
+| A warehouse with a single consumer      | Simpler, but turns the warehouse into a sequential bottleneck                        |
+| A strict FIFO waiting list              | One stuck order would stop the whole kitchen (*head-of-line blocking*)               |
+| Sleeping inside the Lambda to retry     | Every second asleep is paid, and Lambda stops at 15 minutes                          |
+| Requeuing with `DelaySeconds`           | FIFO queues do not accept a delay per message                                        |
+| Step Functions with `Wait` states       | One more service, charges per transition, and LocalStack only partly emulates it    |
 
-### 3.4 Idempotencia: la base de datos es el árbitro
+### 3.4 Idempotency: the database is the arbiter
 
-**Problema:** SQS entrega cada mensaje **al menos una vez**, y dos copias pueden procesarse a la
-vez en instancias distintas.
+**Problem:** SQS delivers every message **at least once**, and two copies may run at the same
+time in different instances.
 
-**Decisión:** el efecto y la marca de "ya procesado" se escriben en la **misma escritura
-condicional**. Ante un duplicado, el handler lo trata como éxito y **vuelve a publicar** el evento
-resultante, por si el proceso murió entre guardar y publicar. Todos los consumidores son
-idempotentes, así que publicar dos veces es seguro.
+**Decision:** the effect and the "already processed" mark are saved in **the same conditional
+write**. A duplicate is treated as a success that **publishes the resulting event again**, in
+case the process died between saving and publishing. Every consumer is idempotent, so
+publishing twice is safe.
 
-| Alternativa descartada                       | Por qué                                                                         |
-| -------------------------------------------- | ------------------------------------------------------------------------------- |
-| Un `Set` en memoria de eventos vistos        | Solo protege a su instancia y se pierde en cada reinicio                        |
-| "Leer si existe → si no, escribir"           | Tiene la misma *race condition* que se quiere evitar                            |
-| *Transactional outbox* con DynamoDB Streams  | Más robusto, pero un stream y una Lambda más por servicio, difícil de emular    |
+| Discarded alternative                         | Why                                                                         |
+| --------------------------------------------- | --------------------------------------------------------------------------- |
+| An in-memory `Set` of seen events             | Only protects its own instance, and is lost on every restart                |
+| "Read if it exists → otherwise write"         | Has the very *race condition* it tries to avoid                             |
+| A *transactional outbox* with DynamoDB Streams | More robust, but one more stream and Lambda per service, and hard to emulate |
 
-**Limitación honesta:** la plaza no es idempotente y no hay transacción que abarque nuestra base
-de datos y su API. En el peor caso se compra **de más**, nunca de menos, y el excedente lo usan
-los siguientes pedidos.
+**An honest limit:** the market is not idempotent, and no transaction spans our database and its
+API. In the worst case it buys **more**, never less, and the next orders use the extra units.
 
-### 3.5 Jornadas
+### 3.5 Workdays
 
-> ⚠️ **Este concepto no está en el enunciado.** Es una decisión de diseño propia.
+> ⚠️ **This concept is not in the challenge.** It is a design decision of our own.
 
-**Origen: dos requisitos en tensión.** R4 dice que "la bodega **inicia siempre** con 5 unidades",
-y la persistencia exige que el estado **sobreviva reinicios**. Reiniciar la bodega al arrancar el
-servidor viola la persistencia; no reiniciarla nunca hace que el "inicia con 5" solo se cumpla
-la primera vez.
+**Origin: two requirements in tension.** R4 says "the warehouse **always starts** with 5 units",
+and persistence requires the state to **survive restarts**. Resetting the warehouse when the
+server starts breaks persistence; never resetting it makes "starts with 5" true only the first
+time.
 
-**Interpretación adoptada:** "siempre" se refiere a **cada jornada de donación**, no a cada
-arranque del proceso. El reinicio pasa a ser una acción de negocio explícita ("Nueva jornada").
+**Adopted reading:** "always" refers to **each donation day**, not to each start of the process.
+The reset becomes an explicit business action ("New workday").
 
-- Solo se permite **sin pedidos en curso**: reiniciar con reservas a medias descuadraría el
-  inventario.
-- Todo pedido y toda compra pertenecen a una jornada, y el historial no se borra.
-- Una compra atrasada de una jornada anterior no entra al stock de la nueva.
-- La primera jornada se crea sola.
+- It is only allowed **with no order in progress**: resetting with half-made reservations would
+  unbalance the inventory.
+- Every order and every purchase belongs to a workday, and history is never deleted.
+- A late purchase of a previous workday does not enter the new stock.
+- The first workday is created automatically.
 
-**Valor agregado:** el historial por jornada no mezcla eventos distintos, y cada reviewer puede
-empezar desde el estado inicial del reto.
+**Added value:** the history per workday does not mix different events, and every reviewer can
+start from the initial state of the challenge.
 
-**Alternativa descartada:** un botón "Reiniciar bodega" sin concepto de jornada. Es más simple,
-pero mezcla el historial y no aporta valor de análisis.
+**Discarded alternative:** a "Reset warehouse" button without the concept of a workday. Simpler,
+but it mixes the history and adds no analysis value.
 
-### 3.6 Validación en tiempo de ejecución (zod)
+### 3.6 Runtime validation (zod)
 
-> El reto **no exige** zod. Es una decisión propia.
+> The challenge **does not require** zod. It is a decision of our own.
 
-**El problema:** los tipos de TypeScript se borran al compilar. Un dato que llega de afuera (un
-mensaje SQS, un body HTTP, la respuesta de la plaza) no se verifica: el código lo trata como si
-fuera del tipo declarado aunque no lo sea. Por ejemplo, un `IngredientPurchased` con
-`{ ingredient: "garlic", quantity: -3 }` restaría unidades de un ingrediente que no existe.
+**The problem:** TypeScript types are erased when compiling. Data that comes from outside (an SQS
+message, an HTTP body, the market's answer) is not checked: the code treats it as the declared
+type even when it is not. For example, an `IngredientPurchased` with
+`{ ingredient: "garlic", quantity: -3 }` would subtract units of an ingredient that does not
+exist.
 
-**Qué hace zod:** con un solo esquema se obtiene la **validación en ejecución** y el **tipo de
-TypeScript** (`z.infer`), así que nunca se desalinean.
+**What zod does:** a single schema gives both the **runtime validation** and the **TypeScript
+type** (`z.infer`), so they never drift apart.
 
-| Frontera                        | Qué protege                                                             |
-| ------------------------------- | ----------------------------------------------------------------------- |
-| Eventos SNS/SQS                 | Un mensaje mal formado va a la DLQ y no corrompe el estado              |
-| Requests HTTP                   | Responde `400` ante `quantity: 0`, negativos o texto                    |
-| Variables de entorno            | El servicio no arranca, con un mensaje claro, si falta configuración    |
-| Respuesta de la plaza           | Verifica que `quantitySold` sea un entero ≥ 0                           |
-| Pregunta y respuesta de la IA   | La pregunta tiene de 1 a 500 caracteres; una respuesta inesperada de Gemini se trata como "no disponible" (§5) |
+| Boundary                       | What it protects                                                                          |
+| ------------------------------ | ----------------------------------------------------------------------------------------- |
+| SNS/SQS events                 | A malformed message goes to the DLQ and does not corrupt the state                        |
+| HTTP requests                  | Answers `400` to `quantity: 0`, negatives or text                                         |
+| Environment variables          | The service refuses to start, with a clear message, when configuration is missing         |
+| The market's answer            | Checks that `quantitySold` is an integer ≥ 0                                              |
+| The AI's question and answer   | The question has 1 to 500 characters; an unexpected answer from Gemini counts as "unavailable" (§5) |
 
-| Alternativa                  | Por qué se descarta                                              |
-| ---------------------------- | ---------------------------------------------------------------- |
-| Validación manual (`typeof`) | Más código y más errores; el tipo se declara aparte (duplicado) |
-| JSON Schema + `ajv`          | Más verboso y no genera los tipos de TypeScript                  |
+| Alternative                  | Why it is discarded                                                  |
+| ---------------------------- | -------------------------------------------------------------------- |
+| Manual checks (`typeof`)     | More code and more mistakes; the type is declared apart (duplicated) |
+| JSON Schema + `ajv`          | More verbose, and it does not produce the TypeScript types           |
 
-**Cumple la restricción del reto:** zod es una librería de validación, no un framework.
+**It meets the challenge's restriction:** zod is a validation library, not a framework.
 
 ---
 
-## 4. Menú bogotano (6 recetas)
+## 4. Bogotá menu (6 recipes)
 
-| #   | Plato              | Ingredientes                             |
+| #   | Dish               | Ingredients                              |
 | --- | ------------------ | ---------------------------------------- |
 | 1   | Ajiaco santafereño | chicken ×2, potato ×3, onion ×1, rice ×1 |
 | 2   | Caldo de costilla  | meat ×2, potato ×2, onion ×1             |
@@ -262,115 +270,116 @@ TypeScript** (`z.infer`), así que nunca se desalinean.
 | 5   | Arroz con pollo    | rice ×2, chicken ×1, tomato ×1, onion ×1 |
 | 6   | Mazamorra chiquita | meat ×1, potato ×2, onion ×1             |
 
-> Notas:
+> Notes:
 >
-> - `ketchup` y `lettuce` no se usan (el reto solo exige "al menos un ingrediente de la lista").
-> - `onion` está en los 6 platos y `potato` en 4: son los ingredientes más comprados en la plaza.
+> - `ketchup` and `lettuce` are not used (the challenge only requires "at least one ingredient
+>   from the list").
+> - `onion` is in all 6 dishes and `potato` in 4: they are the most bought at the market.
 
 ---
 
-## 5. Bonus IA — Asistente operativo
+## 5. AI bonus — Operations assistant
 
-**Problema real:** el gerente no es técnico y durante el evento no tiene tiempo de leer tablas.
-Necesita respuestas rápidas en lenguaje natural:
+**The real problem:** the manager is not technical and has no time to read tables during the
+event. They need quick answers in plain words:
 
-- "¿Cuántos pedidos están esperando ingredientes y por qué?"
-- "¿Qué ingrediente compramos más en la plaza?"
-- "¿Cuántos ajiacos hemos entregado?"
+- "How many orders are waiting for ingredients, and why?"
+- "Which ingredient did we buy the most at the market?"
+- "How many ajiacos have we served?"
 
-**Enfoque: el contexto en una sola llamada.** Ante cada pregunta, el servicio `assistant` lee la
-jornada de las APIs de consulta de cada servicio dueño (`/orders`, `/inventory`, `/purchases`,
-`/recipes`), la **resume** en unos cientos de tokens y se la envía a Gemini junto con la pregunta.
-El modelo responde **solo con esos datos**. Es de **solo lectura**: no puede ejecutar acciones.
+**Approach: the context in a single call.** For each question, the `assistant` service reads the
+workday from the query APIs of each owning service (`/orders`, `/inventory`, `/purchases`,
+`/recipes`), **summarizes** it in a few hundred tokens and sends it to Gemini with the question.
+The model answers **only from that data**. It is **read only**: it cannot take actions.
 
-| Alternativa                    | Por qué se descarta                                                                                                     |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| *Function calling* (el plan inicial) | El modelo pide los datos herramienta por herramienta: 2 a 4 llamadas por pregunta, más lento, y gasta la cuota gratuita, que Google no publica fija, de 2 a 4 veces más rápido. Los datos de una jornada caben de sobra en una sola llamada |
+| Alternative                          | Why it is discarded                                                                                                                                                                       |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| *Function calling* (the first plan)  | The model asks for the data tool by tool: 2 to 4 calls per question, slower, and it spends the free quota, which Google does not publish as fixed numbers, 2 to 4 times faster. A workday's data fits easily in one call |
 
-**Salvaguardas:**
+**Guardrails:**
 
-- las reglas viajan como *system instruction*, separadas de la pregunta, así que lo que escriba el
-  gerente no puede reescribirlas;
-- límite de preguntas por minuto y por día, contado en DynamoDB para que todas las Lambdas vean el
-  mismo número, por debajo de la cuota gratuita de Gemini;
-- tiempo límite por llamada y un mensaje claro si Gemini no responde o se agota su cuota;
-- API key en SSM Parameter Store en AWS y en un `.env` ignorado por Git en local; sin key, el
-  sistema funciona igual y el asistente avisa que no está configurado.
+- the rules travel as the *system instruction*, apart from the question, so whatever the manager
+  types cannot rewrite them;
+- a limit of questions per minute and per day, counted in DynamoDB so every Lambda sees the same
+  number, below Gemini's free quota;
+- a time limit per call, and a clear message if Gemini does not answer or its quota runs out;
+- the API key in SSM Parameter Store in AWS, and in a `.env` ignored by Git locally; without a
+  key, the system works the same and the assistant says it is not configured.
 
-El detalle está en [AI.md](AI.md).
-
----
-
-## 6. Estrategia de pruebas (TDD)
-
-1. **Dominio (unit):** primero el test que falla. Cubre selección aleatoria con semilla inyectable, reserva todo-o-nada, política de compra y reintentos, y máquina de estados del pedido.
-2. **Casos de uso (unit):** con adaptadores en memoria (fakes) de los puertos.
-3. **Adaptadores (integration):** contra LocalStack; los repositorios pasan el mismo contrato de pruebas con los fakes y con DynamoDB.
-4. **Contratos:** validación de esquemas de eventos entre productor y consumidor.
-5. **End-to-end:** `npm run e2e` pide N platos y verifica que todos lleguen a `DELIVERED` y que ningún stock quede negativo, en local y en AWS.
-6. **Carga:** `npm run load` (Artillery) simula muchos gerentes pidiendo a la vez.
-7. **Pruebas de usuario:** una persona usa el dashboard contra la plaza real; sus hallazgos están en el [DEVLOG](DEVLOG.md).
-
-Meta de cobertura: ≥ 90% en `domain` y `application`.
+The details are in [AI.md](AI.md).
 
 ---
 
-## 7. Estructura del repositorio
+## 6. Testing strategy (TDD)
+
+1. **Domain (unit):** the failing test first. Covers the seeded random pick, the all-or-nothing reservation, the purchase and retry policy, and the order's state machine.
+2. **Use cases (unit):** with in-memory adapters (fakes) of the ports.
+3. **Adapters (integration):** against LocalStack; the repositories pass the same contract tests with the fakes and with DynamoDB.
+4. **Contracts:** schema validation of the events between producer and consumer.
+5. **End-to-end:** `npm run e2e` orders N dishes and checks they all reach `DELIVERED` and no stock goes negative, locally and in AWS.
+6. **Load:** `npm run load` (Artillery) simulates many managers ordering at once.
+7. **User tests:** a person uses the dashboard against the real market; their findings are in the [DEVLOG](DEVLOG.md).
+
+Coverage target: ≥ 90% on `domain` and `application`.
+
+---
+
+## 7. Repository structure
 
 ```
 alegra-lunch/
-├── docs/                 # PLANNING.md, ARCHITECTURE.md, DEVLOG.md, AI.md
+├── docs/                 # PLANNING, ARCHITECTURE, DEVLOG and AI, each also in Spanish (.es.md)
 ├── packages/
-│   ├── contracts/        # eventos y DTOs compartidos (tipos + esquemas)
-│   └── shared/           # router HTTP, publicador SNS, consumidor SQS, adaptadores Lambda, logger
+│   ├── contracts/        # events and DTOs shared by every service (types + schemas)
+│   └── shared/           # HTTP router, SNS publisher, SQS consumer, Lambda adapters, logger
 ├── services/
 │   ├── orders/  kitchen/  warehouse/  market/  realtime/  assistant/
 ├── apps/web/             # React + Vite
-├── infra/localstack/     # tablas, topics y colas para docker compose
-├── infra/aws/            # stack compartido: topics, HTTP API, alerta de presupuesto
-├── scripts/              # despliegue en AWS y prueba end-to-end
-├── load/                 # prueba de carga con Artillery
+├── infra/localstack/     # tables, topics and queues for docker compose
+├── infra/aws/            # shared stack: topics, HTTP API, budget alert
+├── scripts/              # AWS deployment and end-to-end check
+├── load/                 # Artillery load test
 ├── docker-compose.yml
 └── .github/workflows/    # CI
 ```
 
 ---
 
-## 8. Plan de trabajo
+## 8. Work plan
 
-| Plan  | Fase                  | Tareas                                                                                  | Estado                                        |
-| ----- | --------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 15/10 | **Análisis**          | Lectura del reto, decisiones, este documento                                            | ✅ 16/10                                      |
-| 16/10 | **0. Setup**          | Monorepo, TS, ESLint/Prettier, Jest, CI; repo privado e invitación a `scouting@alegra.com` | ✅ 16/10                                    |
-| 16/10 | **1. Contratos**      | Eventos y DTOs en `packages/contracts`                                                  | ✅ 16/10                                      |
-| 17/10 | **2. Dominio (TDD)**  | warehouse, kitchen, market, orders                                                      | ✅ 17/10                                      |
-| 18/10 | **3. Adaptadores**    | DynamoDB, SNS/SQS, cliente de la plaza, `node:http`                                     | ✅ 18/10                                      |
-| 18/10 | **4. Docker local**   | Dockerfiles + docker-compose + LocalStack                                               | ✅ 18/10                                      |
-| 19/10 | **5. Realtime + Web** | WebSocket + dashboard                                                                   | ✅ 19/10                                      |
-| 20/10 | **7. AWS**            | `serverless.yml` por servicio, despliegue, S3/CloudFront                                | ✅ 19/10, adelantada a la IA                  |
-| 21/10 | **8. Calidad**        | Pruebas E2E y de carga, pruebas de usuario, README y ARCHITECTURE                       | ✅ 19/10                                      |
-| 20/10 | **6. IA**             | Servicio assistant + chat en el dashboard, `docs/AI.md`                                 | ⏳ funcionando en local; falta AWS            |
-| 22/10 | **Traducción**        | Este documento y el DEVLOG al inglés, conservando la versión en español                 | ⏳ último paso                                |
-| 22/10 | **Entrega**           | Revisión final y envío del formulario                                                   | ⏳                                            |
+| Plan  | Phase                 | Tasks                                                                                         | Status                       |
+| ----- | --------------------- | --------------------------------------------------------------------------------------------- | ---------------------------- |
+| 15/10 | **Analysis**          | Reading the challenge, decisions, this document                                               | ✅ 16/10                     |
+| 16/10 | **0. Setup**          | Monorepo, TS, ESLint/Prettier, Jest, CI; private repo and invitation to `scouting@alegra.com` | ✅ 16/10                     |
+| 16/10 | **1. Contracts**      | Events and DTOs in `packages/contracts`                                                       | ✅ 16/10                     |
+| 17/10 | **2. Domain (TDD)**   | warehouse, kitchen, market, orders                                                            | ✅ 17/10                     |
+| 18/10 | **3. Adapters**       | DynamoDB, SNS/SQS, the market's client, `node:http`                                           | ✅ 18/10                     |
+| 18/10 | **4. Local Docker**   | Dockerfiles + docker-compose + LocalStack                                                     | ✅ 18/10                     |
+| 19/10 | **5. Realtime + Web** | WebSocket + dashboard                                                                         | ✅ 19/10                     |
+| 20/10 | **7. AWS**            | `serverless.yml` per service, deployment, S3/CloudFront                                       | ✅ 19/10, ahead of the AI    |
+| 21/10 | **8. Quality**        | E2E and load tests, user tests, README and ARCHITECTURE                                       | ✅ 19/10                     |
+| 20/10 | **6. AI**             | The assistant service + chat in the dashboard, `docs/AI.md`                                   | ✅ 20/10                     |
+| 22/10 | **Translation**       | Every document in English and in Spanish                                                      | ✅ 20/10                     |
+| 22/10 | **Delivery**          | Final review and sending the form                                                             | ⏳                           |
 
-La fase de AWS se adelantó a la de IA para asegurar la URL pública y medir el sistema en la nube
-antes de agregar el asistente.
+The AWS phase went before the AI one, to secure the public URL and measure the system in the
+cloud before adding the assistant.
 
-### Checklist de entregables del reto
+### Deliverables checklist
 
-- [x] URL de la aplicación desplegada: https://d2dy6tdbg4ssp2.cloudfront.net
-- [x] Repositorio privado en GitHub con `scouting@alegra.com` como colaborador (invitación enviada)
+- [x] URL of the deployed application: https://d2dy6tdbg4ssp2.cloudfront.net
+- [x] Private GitHub repository with `scouting@alegra.com` as a collaborator (invitation sent)
 - [x] `docs/PLANNING.md`
-- [x] Anexos: `docs/ARCHITECTURE.md`, `docs/DEVLOG.md`, `docs/AI.md`
+- [x] Annexes: `docs/ARCHITECTURE.md`, `docs/DEVLOG.md`, `docs/AI.md`
 
 ---
 
-## 9. Riesgos
+## 9. Risks
 
-| Riesgo                                          | Plan                                                                                                                   |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Límites del free tier de Gemini                 | Manejo de errores 429 y mensaje claro en el chat                                                                       |
-| LocalStack no emula algo (p. ej. WebSocket API) | realtime tiene en local un adaptador WebSocket con `ws` sobre `node:http`                                              |
-| LocalStack 4.14.0 ya no recibe actualizaciones  | Solo se usa en local. Si dejara de estar disponible, los adaptadores no cambian; basta con otro emulador               |
-| La plaza de mercado se cae o es lenta           | Timeouts y reintentos indefinidos con tope de 10 s; los pedidos quedan en espera, no fallan                            |
-| Se agotan los créditos de AWS                   | Plan gratuito sin facturas, topes de concurrencia y de peticiones, alerta de presupuesto y pruebas en AWS con cantidades mínimas |
+| Risk                                          | Plan                                                                                                                  |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Limits of Gemini's free tier                  | Handling 429 errors and a clear message in the chat                                                                   |
+| LocalStack does not emulate something (e.g. the WebSocket API) | realtime has a local WebSocket adapter with `ws` on `node:http`                                      |
+| LocalStack 4.14.0 no longer gets updates      | It is only used locally. If it stopped being available, the adapters would not change; another emulator would do      |
+| The farmers market goes down or is slow       | Timeouts and endless retries capped at 10 s; orders wait, they do not fail                                            |
+| The AWS credits run out                       | A free plan without bills, caps on concurrency and requests, a budget alert, and AWS tests with minimal quantities    |
