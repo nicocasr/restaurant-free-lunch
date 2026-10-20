@@ -70,4 +70,12 @@ export const api = {
     request<{ purchases: Purchase[] }>(`${config.marketUrl}/purchases?workdayId=${workdayId}`),
 
   recipes: () => request<Recipe[]>(`${config.kitchenUrl}/recipes`),
+
+  /** One question to the operations assistant (PLANNING §5). */
+  ask: (question: string) =>
+    request<{ answer: string }>(`${config.assistantUrl}/assistant`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ question }),
+    }),
 };

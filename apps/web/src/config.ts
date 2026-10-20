@@ -4,5 +4,6 @@ export const config = {
   warehouseUrl: import.meta.env.VITE_WAREHOUSE_URL ?? 'http://localhost:3001',
   kitchenUrl: import.meta.env.VITE_KITCHEN_URL ?? 'http://localhost:3002',
   marketUrl: import.meta.env.VITE_MARKET_URL ?? 'http://localhost:3003',
+  assistantUrl: import.meta.env.VITE_ASSISTANT_URL ?? 'http://localhost:3005',
   realtimeUrl: import.meta.env.VITE_REALTIME_URL ?? 'ws://localhost:3004/ws',
 };
