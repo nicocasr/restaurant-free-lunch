@@ -97,10 +97,7 @@ export function AssistantPanel() {
       <ol className="exchanges" aria-live="polite">
         {exchanges.map((exchange, index) => (
           <li key={exchanges.length - index} className="exchange">
-            <p className="question">
-              <span className="visually-hidden">You asked: </span>
-              {exchange.question}
-            </p>
+            {/* The answer on top, its question right below it, the newest exchange first. */}
             <div className={exchange.failed ? 'answer error' : 'answer'}>
               <span className="speaker" aria-hidden="true">
                 ✨ Assistant
@@ -108,6 +105,10 @@ export function AssistantPanel() {
               <span className="visually-hidden">The assistant answered: </span>
               <p>{exchange.answer}</p>
             </div>
+            <p className="question">
+              <span className="visually-hidden">You asked: </span>
+              {exchange.question}
+            </p>
           </li>
         ))}
       </ol>
