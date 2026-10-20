@@ -89,26 +89,55 @@ sequenceDiagram
     Note over O,W: realtime pushes every event to the dashboard
 ```
 
-`->>` is a synchronous call, `-)` an event. An order moves only forward through
-`PLACED → COOKING_REQUESTED → WAITING_INGREDIENTS → PREPARING → DELIVERED`, so an event that
-arrives late or twice never moves it back.
+How to read the diagram: a solid arrow (`->>`) is a call that waits for its answer, like the
+dashboard sending the order. An open arrow (`-)`) is an event: the service announces what
+happened and moves on, without waiting for anyone.
+
+Each dish goes through these statuses, always in this order:
+
+| Status                | Meaning                                                                    |
+| --------------------- | -------------------------------------------------------------------------- |
+| `PLACED`              | the manager ordered it                                                     |
+| `COOKING_REQUESTED`   | the kitchen picked its recipe and asked for the ingredients                |
+| `WAITING_INGREDIENTS` | an ingredient was short and is being bought (only some dishes go through this) |
+| `PREPARING`           | every ingredient is set aside for the dish                                 |
+| `DELIVERED`           | the dish was served                                                        |
+
+A queue does not promise that events arrive in order or only once, so orders only moves a
+dish **forward**. If a late `PREPARING` arrives after `DELIVERED`, it is ignored: a dish that
+was served never looks as if it were still cooking.
 
 ## Concurrency
 
 ### Reservations: the database is the arbiter
 
-Reading the stock, deciding and writing would let two dishes take the same unit. Instead, the
-warehouse checks and deducts in one `TransactWriteItems`:
+**The problem.** Picture two dishes asking for the last onion at the same moment, handled by
+two warehouse Lambdas in parallel. If each one first reads the stock ("1 onion, enough") and
+then deducts it, both read 1 and both take it: two dishes for one onion, and the stock ends at
+-1. The Lambdas share no memory, so no code can coordinate them; only the database sees both.
 
-| Item                          | Operation       | Condition                                  |
-| ----------------------------- | --------------- | ------------------------------------------ |
-| each ingredient of the recipe | `stock -= n`    | `stock >= n`                               |
-| the reservation of the order  | create          | does not exist (a repeated message is safe) |
-| the waiting entry, if any     | delete          | exists (only one process takes it out)     |
+**The solution.** The warehouse does not read and then write. It asks DynamoDB to do it all in
+**one transaction** (`TransactWriteItems`), which applies completely or not at all, with a
+condition on each part:
 
-All or nothing: if any ingredient is short, nothing is deducted, and the cancellation reasons
-say exactly which ingredients are missing. Many warehouses can run at once; a loser of a race
-gets a `TransactionCanceled` and retries, and the stock never goes below zero.
+| What it touches               | What it does | Only if                                                  |
+| ----------------------------- | ------------ | -------------------------------------------------------- |
+| each ingredient of the recipe | `stock -= n` | `stock >= n`                                             |
+| the reservation of the dish   | creates it   | it does not exist yet, so a repeated message changes nothing |
+| the dish on the waiting list  | removes it   | it is still there, so only one Lambda takes it out       |
+
+What happens then:
+
+- **There is enough of everything:** every ingredient is deducted at once and the dish moves
+  to `PREPARING`.
+- **Something is short:** nothing is deducted, not even the ingredients that were there.
+  DynamoDB says which conditions failed, so the warehouse knows exactly what the dish misses
+  and puts it on the waiting list.
+- **Two dishes want the last onion:** DynamoDB applies one transaction after the other. The
+  first one takes the onion; for the second, `stock >= 1` is now false, so it is cancelled and
+  the dish waits for the next purchase.
+
+So many warehouse Lambdas can work at the same time, and the stock never goes below zero.
 
 ### Aggregated demand: one shortage per ingredient
 
@@ -143,28 +172,47 @@ pays for a Lambda that sleeps.
 
 ### Idempotency
 
-SQS delivers at least once, and two copies may run at the same time in different instances. So
-the effect and the "already done" mark are written in the same conditional write, and a
-duplicate is treated as a success that **publishes the resulting event again**: the database
-write and the SNS publish cannot be atomic, and republishing covers a process that died in
-between. Every consumer is idempotent, so a second copy of an event is harmless.
+"Idempotent" means that doing something twice has the same effect as doing it once. Every
+consumer must be, because of how SQS works.
 
-| Operation            | Idempotency key                    |
-| -------------------- | ---------------------------------- |
-| Place a batch        | `Idempotency-Key` header           |
-| Move an order        | order id + status rank             |
-| Assign a recipe      | order id (a retry keeps the recipe) |
-| Reserve ingredients  | order id                           |
-| Add a purchase       | purchase id                        |
-| Publish a shortage   | shortage id, saved as pending      |
+**The problem: a message can arrive twice.** SQS promises that every message arrives *at
+least* once, not *exactly* once. If a Lambda finishes its work but dies before telling the
+queue "done", the queue hands the message out again. Sometimes two copies even run at the same
+time in two Lambdas. Without care, a purchase of 3 onions arriving twice would add 6 to the
+stock.
 
-Records that must be published (shortages, reservations taken from the waiting list, workdays)
-are stored as **pending** in the same transaction and republished until they are marked as
-published.
+**The solution: the work and the "already done" mark are saved together.** Each operation
+has a key that identifies it, for example the purchase id. In the same database write that adds
+the 3 onions, the warehouse records "purchase `p-123` applied", with the condition that this
+record does not exist yet. When the copy arrives, the condition fails, so the copy changes
+nothing. If both copies run at once, the database lets exactly one of them win.
 
-The farmers market is not idempotent. The market checks what it already bought before each
-round and records each sale at once; in the worst case it buys more, never less, and the extra
-units go to the stock.
+| Operation            | What identifies it                     |
+| -------------------- | -------------------------------------- |
+| Place a batch        | the `Idempotency-Key` sent by the dashboard |
+| Move an order        | the order and its status               |
+| Assign a recipe      | the order, so a retry keeps the same recipe |
+| Reserve ingredients  | the order                              |
+| Add a purchase       | the purchase                           |
+| Publish a shortage   | the shortage                           |
+
+**One more case: dying between saving and announcing.** After saving, a service publishes an
+event so that the next service continues, for example `IngredientsReserved` for the kitchen.
+Saving and publishing are two separate steps, and the process can die right in between: the
+work is saved, but nobody was told. When the message is retried, the database answers "already
+done"; if the service then stopped there, the kitchen would never hear about the dish and it
+would be stuck forever. So a copy that finds the work already done **publishes the event
+again**. That may announce it twice, which is harmless, because the next service is idempotent
+too.
+
+For the same reason, the events that are hardest to rebuild (shortages, dishes taken from the
+waiting list, new workdays) are saved as **pending** in the same transaction as the work, and
+published again until they are marked as published.
+
+**What cannot be made idempotent: the farmers market.** We do not control its API: buying
+twice really buys twice. So the market checks what it already bought before each round, and
+records each sale right away. In the worst case it buys a little more, never less, and the
+extra units go to the stock for the next dishes.
 
 ### Failures
 
@@ -211,9 +259,15 @@ flowchart LR
     rt --> ddb
 ```
 
-In AWS, each Lambda reserves at most 10 concurrent executions and each queue triggers at most 10,
-the HTTP API throttles at 50 requests per second, logs are kept 7 days, and there is no VPC or
-NAT gateway: an abuse cannot turn into a bill.
+Limits that keep the AWS deployment free:
+
+- Each Lambda can run at most 10 copies at the same time, and each queue starts at most 10. The
+  warehouse queue gets 20, because every dish and every purchase goes through it.
+- The HTTP API rejects requests above 50 per second (bursts of 100).
+- Logs are kept 7 days, and there is no VPC or NAT gateway, which would be billed by the hour.
+
+On top of that, the account is on the AWS free plan, which cannot charge money: so an abuse
+could at most spend credits, and these limits keep that small.
 
 ## What testing found
 
