@@ -123,16 +123,18 @@ The deployment runs on the AWS free plan and is designed so that it cannot cost 
 
 ## Results in AWS
 
-| Check                    | Result                                                        |
-| ------------------------ | ------------------------------------------------------------- |
-| End-to-end, 3 dishes     | delivered in 7 s                                              |
-| Load, 200 dishes at once | 20/20 batches accepted, p95 400 ms; all delivered in 1 m 48 s |
-| Dead-letter queues       | empty                                                         |
-| Leftover stock           | 0-2 units per ingredient: nothing bought twice                |
-| Events to the dashboard  | about 0.2 s after they happen                                 |
+| Check                            | Result                                                         |
+| -------------------------------- | -------------------------------------------------------------- |
+| End-to-end, 3 dishes             | delivered in 7-13 s, depending on what the market sells        |
+| Order button, 20 batches in 10 s | all accepted; median 191 ms, p95 296 ms                        |
+| 200 dishes at once               | all delivered 24 s after the first batch (15 s after the last) |
+| Dead-letter queues               | empty                                                          |
+| Stock at the end                 | never below zero; a few units left, nothing bought twice       |
+| Events to the dashboard          | about 0.2 s after they happen                                  |
 
-The load test ran while the account still allowed 10 concurrent Lambdas. Most of the time was
-spent waiting for the farmers market, which sells one batch per ingredient at a time.
+During the load test a few reservations collided on the same ingredient (onion is in every
+dish). DynamoDB rejected the late ones, they were retried a second later, and no dish was lost:
+the database acting as the arbiter, under real load.
 
 ## Repository
 

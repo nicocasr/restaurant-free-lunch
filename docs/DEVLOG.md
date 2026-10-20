@@ -140,11 +140,17 @@ la regla de versiones quedó explícita: agregar un campo opcional no cambia la 
 
 | Prueba                     | Resultado                                                                        |
 | -------------------------- | -------------------------------------------------------------------------------- |
-| End-to-end, 3 platos       | entregados en 7 s                                                                |
-| Carga, 200 platos a la vez | 20/20 lotes aceptados, p95 de 400 ms; todos entregados en 1 min 48 s, con 10 Lambdas en la cuenta |
+| End-to-end, 3 platos       | entregados en 7 a 13 s, según lo que venda la plaza                              |
+| Carga, 200 platos a la vez, cuenta con 10 Lambdas | 20/20 lotes aceptados, p95 de 400 ms; todos entregados en **1 min 48 s** |
+| La misma carga con la cuota ampliada, antes de corregir las colas | todos entregados en 82 s, con 46 s detenidos |
+| La misma carga con las colas corregidas (v2.1) | 20/20 lotes aceptados, p95 de 296 ms; todos entregados en **24 s** desde el primer lote |
 | Colas de mensajes inválidos | vacías                                                                          |
-| Stock sobrante             | 0 a 2 unidades por ingrediente                                                   |
+| Stock final                | nunca negativo; pocas unidades de sobra                                          |
 | Créditos                   | centavos por prueba; ningún cobro                                                |
+
+En la última carga, 9 reservas chocaron sobre el mismo ingrediente (6 conflictos de transacción
+y 3 frenos momentáneos de DynamoDB por la cebolla, que está en todos los platos). Todas se
+reintentaron en 1 s y ningún plato se perdió.
 
 ---
 
