@@ -1,0 +1,18 @@
+{
+  "name": "@alegra-lunch/assistant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Operations assistant: answers the manager's questions in plain words with Gemini",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "jest",
+    "test:integration": "jest -c jest.integration.config.cjs"
+  },
+  "dependencies": {
+    "@alegra-lunch/contracts": "0.1.0",
+    "@alegra-lunch/shared": "0.1.0",
+    "zod": "^4.6.7"
+  }
+}
