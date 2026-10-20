@@ -94,11 +94,13 @@ resources:
         MessageRetentionPeriod: 1209600
 
     # An old event is useless to a live dashboard, so the queue keeps them only 5 minutes.
+    # Twice the Lambda timeout, not the six times AWS suggests: a message the poller took but
+    # could not hand over waits for this before it returns, and 60 s stalled a whole batch.
     RealtimeQueue:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: alegra-lunch-${sls:stage}-realtime
-        VisibilityTimeout: 60
+        VisibilityTimeout: 20
         MessageRetentionPeriod: 300
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt RealtimeDlq.Arn

@@ -90,12 +90,13 @@ resources:
         QueueName: alegra-lunch-${sls:stage}-kitchen-dlq
         MessageRetentionPeriod: 1209600
 
-    # Six times the Lambda timeout, as AWS recommends for queues that trigger a Lambda.
+    # Twice the Lambda timeout, not the six times AWS suggests: a message the poller took but
+    # could not hand over waits for this before it returns, and 60 s stalled a whole batch.
     KitchenQueue:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: alegra-lunch-${sls:stage}-kitchen
-        VisibilityTimeout: 60
+        VisibilityTimeout: 20
 
     KitchenQueuePolicy:
       Type: AWS::SQS::QueuePolicy

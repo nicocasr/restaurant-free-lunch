@@ -53,15 +53,16 @@ build:
 functions:
   queue:
     handler: src/entrypoints/lambda/handlers.queue
-    # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
-    reservedConcurrency: 10
+    # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2). Twice
+    # the others: every dish and every purchase goes through the warehouse.
+    reservedConcurrency: 20
     events:
       - sqs:
           arn: !GetAtt WarehouseQueue.Arn
           batchSize: 10
           functionResponseType: ReportBatchItemFailures
           # As many Lambdas as the function reserves.
-          maximumConcurrency: 10
+          maximumConcurrency: 20
   http:
     handler: src/entrypoints/lambda/handlers.http
     # A cap, free unlike provisioned concurrency: an abuse never burns the credits (§2).
@@ -90,12 +91,13 @@ resources:
         QueueName: alegra-lunch-${sls:stage}-warehouse-dlq
         MessageRetentionPeriod: 1209600
 
-    # Six times the Lambda timeout, as AWS recommends for queues that trigger a Lambda.
+    # Twice the Lambda timeout, not the six times AWS suggests: a message the poller took but
+    # could not hand over waits for this before it returns, and 60 s stalled a whole batch.
     WarehouseQueue:
       Type: AWS::SQS::Queue
       Properties:
         QueueName: alegra-lunch-${sls:stage}-warehouse
-        VisibilityTimeout: 60
+        VisibilityTimeout: 20
 
     WarehouseQueuePolicy:
       Type: AWS::SQS::QueuePolicy
