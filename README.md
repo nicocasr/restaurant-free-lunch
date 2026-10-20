@@ -106,6 +106,16 @@ containers and runs the integration tests and the end-to-end check.
 Requirements: the AWS CLI logged in, and the Serverless Framework v4 logged in
 (`serverless login`).
 
+For the assistant, store the Gemini API key in SSM Parameter Store once (optional: without it
+the assistant answers that it is not configured):
+
+```bash
+aws ssm put-parameter --region us-east-2 --type SecureString \
+  --name /alegra-lunch/dev/gemini-api-key --value "<your key>"
+```
+
+Then deploy everything:
+
 ```bash
 BUDGET_EMAIL=you@example.com npm run deploy:aws
 ```
