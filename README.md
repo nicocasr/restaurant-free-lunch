@@ -13,6 +13,9 @@ Nest or similar frameworks, each with its own Dockerfile, deployed serverless on
 How it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), every decision and its
 reason in [docs/PLANNING.md](docs/PLANNING.md), and how it evolved, with what each test found,
 in [docs/DEVLOG.md](docs/DEVLOG.md). The AI assistant is explained in [docs/AI.md](docs/AI.md).
+Every document is also in Spanish: [PLANNING.es.md](docs/PLANNING.es.md),
+[ARCHITECTURE.es.md](docs/ARCHITECTURE.es.md), [DEVLOG.es.md](docs/DEVLOG.es.md) and
+[AI.es.md](docs/AI.es.md).
 
 ## How it works
 
