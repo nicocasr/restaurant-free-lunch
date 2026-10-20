@@ -427,27 +427,67 @@ progress {
 
 .exchanges {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 16px 0 0;
   padding: 0;
   display: grid;
-  gap: 12px;
-  max-height: 50vh;
+  gap: 20px;
+  max-height: 55vh;
   overflow-y: auto;
+  padding-right: 4px;
 }
 
-.exchanges .question {
-  margin: 0 0 4px;
+/* One question and its answer, apart from the next ones. */
+.exchange {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.exchange:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* The manager's question: on the right, in the accent color, like a sent message. */
+.exchange .question {
+  justify-self: end;
+  max-width: 85%;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
-.exchanges .answer {
+/* The answer: on the left, on a neutral background, with who says it. */
+.exchange .answer {
+  justify-self: start;
+  max-width: 95%;
+  padding: 8px 12px;
+  border-radius: 14px 14px 14px 4px;
+  background: color-mix(in srgb, var(--muted) 14%, var(--surface));
+  border: 1px solid var(--border);
+}
+
+.exchange .answer p {
   margin: 0;
   white-space: pre-wrap;
-  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
-.exchanges .answer.error {
+.exchange .answer.error p {
   color: var(--danger);
+}
+
+.exchange .speaker {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 4px;
 }
 
 .visually-hidden {
