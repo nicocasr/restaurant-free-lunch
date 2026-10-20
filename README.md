@@ -12,21 +12,22 @@ Built for the Alegra backend challenge: Node.js and TypeScript microservices wit
 Nest or similar frameworks, each with its own Dockerfile, deployed serverless on AWS at no cost.
 How it is built is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), every decision and its
 reason in [docs/PLANNING.md](docs/PLANNING.md), and how it evolved, with what each test found,
-in [docs/DEVLOG.md](docs/DEVLOG.md).
+in [docs/DEVLOG.md](docs/DEVLOG.md). The AI assistant is explained in [docs/AI.md](docs/AI.md).
 
 ## How it works
 
-Five services talk only through events (SNS topics fanned out to one SQS queue per service), and
-each one owns its DynamoDB table.
+The services talk only through events (SNS topics fanned out to one SQS queue per service), and
+each one owns its DynamoDB table. The assistant only reads the query APIs of the others.
 
-| Service       | Responsibility                                                                  |
-| ------------- | ------------------------------------------------------------------------------- |
-| **orders**    | Manager API: places batches of dishes, starts workdays, keeps the order history |
-| **kitchen**   | Picks a random recipe per dish, asks for its ingredients and delivers the dish  |
-| **warehouse** | Reserves ingredients atomically, keeps the waiting list and asks for purchases  |
-| **market**    | Buys at the farmers market, retrying with backoff while it has nothing to sell  |
-| **realtime**  | Pushes every change to the dashboards over WebSocket                            |
-| **web**       | React dashboard: orders, inventory, purchases, order history and recipes        |
+| Service       | Responsibility                                                                          |
+| ------------- | --------------------------------------------------------------------------------------- |
+| **orders**    | Manager API: places batches of dishes, starts workdays, keeps the order history         |
+| **kitchen**   | Picks a random recipe per dish, asks for its ingredients and delivers the dish          |
+| **warehouse** | Reserves ingredients atomically, keeps the waiting list and asks for purchases          |
+| **market**    | Buys at the farmers market, retrying with backoff while it has nothing to sell          |
+| **realtime**  | Pushes every change to the dashboards over WebSocket                                    |
+| **assistant** | Answers the manager's questions in plain words with Gemini (AI)                         |
+| **web**       | React dashboard: orders, inventory, purchases, order history, recipes and the assistant |
 
 ```mermaid
 flowchart LR
@@ -73,6 +74,10 @@ docker compose up --build
 
 Open http://localhost:8080. LocalStack emulates DynamoDB, SNS and SQS, so no AWS account is
 needed; the purchases go to the real farmers market.
+
+The AI assistant needs a free Gemini API key: copy [.env.example](.env.example) to `.env` and
+fill in `GEMINI_API_KEY` ([how](docs/AI.md#setting-it-up)). Without it, everything else works
+the same and the assistant answers that it is not configured.
 
 ## Tests
 
@@ -150,4 +155,5 @@ load/                Artillery load test
 docs/ARCHITECTURE.md how it is built and why it stays correct under load
 docs/PLANNING.md     goal, decisions, alternatives and plan
 docs/DEVLOG.md       how it evolved: each finding, its cause and its fix
+docs/AI.md           the AI assistant: how it answers, its guardrails and how to set it up
 ```

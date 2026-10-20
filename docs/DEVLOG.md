@@ -156,6 +156,22 @@ En la última carga, 9 reservas chocaron sobre el mismo ingrediente (6 conflicto
 y 3 frenos momentáneos de DynamoDB por la cebolla, que está en todos los platos). Todas se
 reintentaron en 1 s y ningún plato se perdió.
 
+### 19-20/10 — Asistente de IA
+
+- Servicio `assistant` con TDD: resumen de la jornada, reglas para el modelo, caso de uso,
+  adaptadores (Gemini, APIs de consulta, contador en DynamoDB) y el panel de chat del dashboard.
+
+| Se vio                                                                                                                                  | Corrección                                                                                                                         |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Google no publica cuotas fijas para el plan gratuito de Gemini, y *function calling* gasta de 2 a 4 llamadas por pregunta              | **Contexto en una sola llamada**: el asistente resume la jornada y la envía con la pregunta (v2.2)                                 |
+| Algunos IDs de modelo conocidos ya estaban retirados                                                                                    | Se consultó la lista de modelos de la cuenta y se probaron tres con una llamada mínima; se fijó `gemini-3.5-flash-lite`, el más rápido |
+| Dos preguntas al mismo instante chocaban en el contador de DynamoDB, y la segunda se rechazaba aunque hubiera cupo                     | Ante un conflicto se reintenta; solo un contador lleno rechaza. Una prueba lanza 20 preguntas con límite de 5 y pasan exactamente 5 |
+| El panel prometía comparar con la jornada anterior, pero orders no ofrece la lista de jornadas pasadas                                  | El panel habla solo de la jornada actual; comparar jornadas queda como mejora                                                      |
+
+**Primera pregunta real:** "¿Qué ingrediente compramos más y cuántos platos se han entregado?".
+Respondió en español en 3,8 s: "la papa, con 153 unidades en 14 compras… 100 platos". Los datos
+decían exactamente eso.
+
 ---
 
 ## Versiones del plan
@@ -188,3 +204,4 @@ reintentaron en 1 s y ningún plato se perdió.
 | 1.23    | 19/10/2026 | AWS amplió la cuota de Lambda a 1000; cada función reserva 10 ejecuciones y cada cola dispara hasta 10                                                         |
 | 2.0     | 19/10/2026 | El plan se divide en tres documentos: PLANNING (qué y por qué), ARCHITECTURE (cómo) y este DEVLOG (el camino)                                                 |
 | 2.1     | 19/10/2026 | La cola de warehouse reserva 20 Lambdas; las colas estándar devuelven en 20 s los mensajes que no alcanzaron a entregarse                                      |
+| 2.2     | 20/10/2026 | El asistente usa el contexto en una sola llamada en lugar de *function calling*; límite de preguntas por minuto y por día en DynamoDB                     |

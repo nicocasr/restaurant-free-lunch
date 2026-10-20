@@ -216,8 +216,8 @@ arranque del proceso. El reinicio pasa a ser una acción de negocio explícita (
 - Una compra atrasada de una jornada anterior no entra al stock de la nueva.
 - La primera jornada se crea sola.
 
-**Valor agregado:** el historial por jornada no mezcla eventos distintos, cada reviewer puede
-empezar desde el estado inicial del reto, y el asistente IA puede comparar jornadas.
+**Valor agregado:** el historial por jornada no mezcla eventos distintos, y cada reviewer puede
+empezar desde el estado inicial del reto.
 
 **Alternativa descartada:** un botón "Reiniciar bodega" sin concepto de jornada. Es más simple,
 pero mezcla el historial y no aporta valor de análisis.
@@ -240,7 +240,7 @@ TypeScript** (`z.infer`), así que nunca se desalinean.
 | Requests HTTP                   | Responde `400` ante `quantity: 0`, negativos o texto                    |
 | Variables de entorno            | El servicio no arranca, con un mensaje claro, si falta configuración    |
 | Respuesta de la plaza           | Verifica que `quantitySold` sea un entero ≥ 0                           |
-| Argumentos de las herramientas de la IA | El modelo no puede pasar parámetros inventados (§5)             |
+| Pregunta y respuesta de la IA   | La pregunta tiene de 1 a 500 caracteres; una respuesta inesperada de Gemini se trata como "no disponible" (§5) |
 
 | Alternativa                  | Por qué se descarta                                              |
 | ---------------------------- | ---------------------------------------------------------------- |
@@ -278,18 +278,26 @@ Necesita respuestas rápidas en lenguaje natural:
 - "¿Qué ingrediente compramos más en la plaza?"
 - "¿Cuántos ajiacos hemos entregado?"
 
-**Enfoque:** Gemini con *function calling*. El modelo **no inventa datos**: solo puede responder
-llamando a herramientas de lectura (`getInventory`, `getOrdersSummary`, `getPurchaseHistory`, `getRecipes`).
-Es de **solo lectura**, así que la IA no puede ejecutar acciones operativas.
+**Enfoque: el contexto en una sola llamada.** Ante cada pregunta, el servicio `assistant` lee la
+jornada de las APIs de consulta de cada servicio dueño (`/orders`, `/inventory`, `/purchases`,
+`/recipes`), la **resume** en unos cientos de tokens y se la envía a Gemini junto con la pregunta.
+El modelo responde **solo con esos datos**. Es de **solo lectura**: no puede ejecutar acciones.
+
+| Alternativa                    | Por qué se descarta                                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| *Function calling* (el plan inicial) | El modelo pide los datos herramienta por herramienta: 2 a 4 llamadas por pregunta, más lento, y gasta la cuota gratuita, que Google no publica fija, de 2 a 4 veces más rápido. Los datos de una jornada caben de sobra en una sola llamada |
 
 **Salvaguardas:**
 
-- límite de iteraciones de herramientas por pregunta y timeout;
-- rate limiting por cliente;
-- API key en SSM Parameter Store, nunca en el repositorio;
-- mensaje amable cuando se alcanza la cuota del free tier.
+- las reglas viajan como *system instruction*, separadas de la pregunta, así que lo que escriba el
+  gerente no puede reescribirlas;
+- límite de preguntas por minuto y por día, contado en DynamoDB para que todas las Lambdas vean el
+  mismo número, por debajo de la cuota gratuita de Gemini;
+- tiempo límite por llamada y un mensaje claro si Gemini no responde o se agota su cuota;
+- API key en SSM Parameter Store en AWS y en un `.env` ignorado por Git en local; sin key, el
+  sistema funciona igual y el asistente avisa que no está configurado.
 
-Se documentará en detalle en `docs/AI.md`.
+El detalle está en [AI.md](AI.md).
 
 ---
 
@@ -341,7 +349,7 @@ alegra-lunch/
 | 19/10 | **5. Realtime + Web** | WebSocket + dashboard                                                                   | ✅ 19/10                                      |
 | 20/10 | **7. AWS**            | `serverless.yml` por servicio, despliegue, S3/CloudFront                                | ✅ 19/10, adelantada a la IA                  |
 | 21/10 | **8. Calidad**        | Pruebas E2E y de carga, pruebas de usuario, README y ARCHITECTURE                       | ✅ 19/10                                      |
-| 20/10 | **6. IA**             | Servicio assistant + chat en el dashboard, `docs/AI.md`                                 | ⏳                                            |
+| 20/10 | **6. IA**             | Servicio assistant + chat en el dashboard, `docs/AI.md`                                 | ⏳ funcionando en local; falta AWS            |
 | 22/10 | **Traducción**        | Este documento y el DEVLOG al inglés, conservando la versión en español                 | ⏳ último paso                                |
 | 22/10 | **Entrega**           | Revisión final y envío del formulario                                                   | ⏳                                            |
 
@@ -353,8 +361,7 @@ antes de agregar el asistente.
 - [x] URL de la aplicación desplegada: https://d2dy6tdbg4ssp2.cloudfront.net
 - [x] Repositorio privado en GitHub con `scouting@alegra.com` como colaborador (invitación enviada)
 - [x] `docs/PLANNING.md`
-- [x] Anexos: `docs/ARCHITECTURE.md`, `docs/DEVLOG.md`
-- [ ] Anexo: `docs/AI.md`
+- [x] Anexos: `docs/ARCHITECTURE.md`, `docs/DEVLOG.md`, `docs/AI.md`
 
 ---
 
