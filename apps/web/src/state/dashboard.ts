@@ -31,11 +31,11 @@ export interface DashboardState {
   purchases: readonly Purchase[];
   /** An event changed the stock: the inventory must be read again from the warehouse. */
   inventoryOutdated: boolean;
-  /** Ids of the events already applied: a batch may repeat one (PLANNING §3.6). */
+  /** Ids of the events already applied: a batch may repeat one (PLANNING §3.4). */
   seen: ReadonlySet<string>;
 }
 
-export type DashboardAction =
+type DashboardAction =
   | { type: 'loaded'; workdayId: string | undefined; orders: OrderView[]; purchases: Purchase[] }
   | { type: 'events'; events: readonly DomainEvent[] }
   | { type: 'inventoryReloaded' };
@@ -172,25 +172,34 @@ export interface PlacedOrder {
 /** "Historial de pedidos": one row per order the manager placed, the latest first. */
 export function orderHistory(state: DashboardState): PlacedOrder[] {
   const batches = Map.groupBy(state.orders.values(), (order) => order.batchId);
-  return [...batches]
-    .map(([batchId, orders]): PlacedOrder => {
-      const done = orders.filter(({ status }) => status === 'DELIVERED');
-      const perRecipe = Map.groupBy(done, (order) => order.recipeName ?? 'Dish');
-      const placedAt = orders.find((order) => order.placedAt)?.placedAt;
-      const lastDelivery = Math.max(...done.map((order) => Date.parse(order.deliveredAt ?? '')));
-      return {
-        batchId,
-        placedAt,
-        dishes: orders.length,
-        delivered: done.length,
-        served: [...perRecipe]
-          .map(([recipeName, dishes]) => ({ recipeName, count: dishes.length }))
-          .sort((a, b) => b.count - a.count),
-        tookMs:
-          done.length === orders.length && placedAt && Number.isFinite(lastDelivery)
-            ? lastDelivery - Date.parse(placedAt)
-            : undefined,
-      };
-    })
-    .reverse();
+  return (
+    [...batches]
+      .map(([batchId, orders]): PlacedOrder => {
+        const done = orders.filter(({ status }) => status === 'DELIVERED');
+        const perRecipe = Map.groupBy(done, (order) => order.recipeName ?? 'Dish');
+        const placedAt = orders.find((order) => order.placedAt)?.placedAt;
+        const lastDelivery = Math.max(...done.map((order) => Date.parse(order.deliveredAt ?? '')));
+        return {
+          batchId,
+          placedAt,
+          dishes: orders.length,
+          delivered: done.length,
+          served: [...perRecipe]
+            .map(([recipeName, dishes]) => ({ recipeName, count: dishes.length }))
+            .sort((a, b) => b.count - a.count),
+          tookMs:
+            done.length === orders.length && placedAt && Number.isFinite(lastDelivery)
+              ? lastDelivery - Date.parse(placedAt)
+              : undefined,
+        };
+      })
+      // By the time they were placed: the API spreads orders over partitions, so it does not
+      // answer in time order. An order just placed may not have its time yet: it goes last.
+      .sort(
+        (a, b) =>
+          (a.placedAt ? Date.parse(a.placedAt) : Infinity) -
+          (b.placedAt ? Date.parse(b.placedAt) : Infinity),
+      )
+      .reverse()
+  );
 }

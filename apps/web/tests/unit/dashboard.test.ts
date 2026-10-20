@@ -220,6 +220,29 @@ describe('dashboard state', () => {
     ]);
   });
 
+  it('sorts the orders by the time they were placed, whatever order the API answers in', () => {
+    // Orders are spread over partitions, so the API does not return them by time.
+    const at = (time: string) => ({
+      orderId: randomUUID(),
+      status: 'DELIVERED' as const,
+      batchId: time,
+      placedAt: `2026-10-19T${time}.000Z`,
+    });
+
+    const state = dashboardReducer(emptyDashboard, {
+      type: 'loaded',
+      workdayId,
+      orders: [at('19:30:18'), at('20:21:34'), at('19:30:13')],
+      purchases: [],
+    });
+
+    expect(orderHistory(state).map(({ batchId }) => batchId)).toEqual([
+      '20:21:34',
+      '19:30:18',
+      '19:30:13',
+    ]);
+  });
+
   it('counts the dishes served per recipe, the most served first', () => {
     const batch = randomUUID();
     const orders = Array.from({ length: 3 }, (_, index) => ({
