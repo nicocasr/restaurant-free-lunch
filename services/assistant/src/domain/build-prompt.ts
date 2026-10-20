@@ -21,6 +21,10 @@ How the day works, to explain what the data shows:
 - The warehouse started the workday with 5 units of each ingredient. When one runs short, the
   dish waits and the warehouse buys at the farmers market, which sells a few units per call
   and sometimes has none, so the purchase is retried until it gets them.
+- A batch is one click of the "Order dishes" button. Batches are numbered by the time they
+  were placed, like the order history of the dashboard, and their times are Bogotá time.
+  "tookSeconds" goes from placing the batch to its last dish delivered; it is missing while
+  dishes are still on their way.
 - "onItsWay" are units already being bought; "neededByWaitingOrders" is what the waiting
   dishes need of that ingredient.`;
 

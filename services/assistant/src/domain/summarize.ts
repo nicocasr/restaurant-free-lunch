@@ -9,6 +9,10 @@ export interface Snapshot {
     recipeName?: string;
     missing?: readonly IngredientQuantity[];
     waitingSince?: string;
+    /** The click of the button the dish was ordered in. */
+    batchId?: string;
+    placedAt?: string;
+    deliveredAt?: string;
   }[];
   inventory: readonly {
     ingredient: Ingredient;
@@ -22,6 +26,21 @@ export interface Snapshot {
 
 /** The model reads the oldest waiting orders; more would only cost tokens. */
 const MAX_WAITING_ORDERS = 20;
+
+/** The latest batches the model reads in detail; the slowest and quickest cover all of them. */
+const MAX_BATCHES = 50;
+
+/** A batch whose time has not arrived yet goes last, as on the dashboard. */
+const timeOf = (placedAt: string | undefined) => (placedAt ? Date.parse(placedAt) : Infinity);
+
+/** The time in Bogotá, as the manager reads it on the dashboard. */
+const bogotaTime = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'America/Bogota',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+});
 
 const listOf = (items: readonly IngredientQuantity[]) =>
   items.map(({ ingredient, quantity }) => `${ingredient} x${String(quantity)}`).join(', ');
@@ -52,6 +71,34 @@ export function summarize(snapshot: Snapshot, now: Date) {
     }))
     .sort((a, b) => (b.waitingSeconds ?? 0) - (a.waitingSeconds ?? 0));
 
+  const batches = [...Map.groupBy(snapshot.orders, ({ batchId }) => batchId)]
+    .map(([, orders]) => {
+      const placedAt = orders.find((order) => order.placedAt)?.placedAt;
+      const delivered = orders.filter(({ status }) => status === 'DELIVERED');
+      const lastDelivery = Math.max(
+        ...delivered.map(({ deliveredAt }) => Date.parse(deliveredAt ?? '')),
+      );
+      return {
+        placedAt,
+        dishes: orders.length,
+        delivered: delivered.length,
+        // Only once every dish is out, like the "Took" column of the order history.
+        tookSeconds:
+          placedAt && delivered.length === orders.length && Number.isFinite(lastDelivery)
+            ? Math.round((lastDelivery - Date.parse(placedAt)) / 1_000)
+            : undefined,
+      };
+    })
+    // Numbered by the time they were placed, as the order history numbers them.
+    .sort((a, b) => timeOf(a.placedAt) - timeOf(b.placedAt))
+    .map(({ placedAt, ...batch }, index) => ({
+      batch: index + 1,
+      placedAt: placedAt ? bogotaTime.format(new Date(placedAt)) : undefined,
+      ...batch,
+    }));
+  const finished = batches.filter(({ tookSeconds }) => tookSeconds !== undefined);
+  const byDuration = finished.toSorted((a, b) => (a.tookSeconds ?? 0) - (b.tookSeconds ?? 0));
+
   const bought = new Map<Ingredient, { purchases: number; units: number }>();
   for (const { ingredient, quantity } of snapshot.purchases) {
     const total = bought.get(ingredient) ?? { purchases: 0, units: 0 };
@@ -67,6 +114,10 @@ export function summarize(snapshot: Snapshot, now: Date) {
       waitingTotal: waiting.length,
       waiting: waiting.slice(0, MAX_WAITING_ORDERS),
     },
+    batchesTotal: batches.length,
+    batches: batches.slice(-MAX_BATCHES),
+    slowestBatch: byDuration.at(-1),
+    quickestBatch: byDuration.at(0),
     inventory: snapshot.inventory.map(({ ingredient, stock, inFlight, waitingNeed }) => ({
       ingredient,
       stock,

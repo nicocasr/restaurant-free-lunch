@@ -14,6 +14,9 @@ const OrdersSchema = z.looseObject({
       recipeName: z.string().optional(),
       missing: z.array(IngredientQuantitySchema).optional(),
       waitingSince: z.string().optional(),
+      batchId: z.string().optional(),
+      placedAt: z.string().optional(),
+      deliveredAt: z.string().optional(),
     }),
   ),
 });
