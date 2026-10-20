@@ -7,9 +7,6 @@
 > - **Cómo evolucionó** (cada versión de este plan, lo que encontraron las pruebas y lo que se
 >   cambió por ello): [DEVLOG.md](DEVLOG.md).
 
-Estado: **v2.0 — Aprobado (19/10/2026)**. Reorganizado en tres documentos; el historial de las
-versiones 1.0 a 1.23 está en el [DEVLOG](DEVLOG.md#versiones-del-plan).
-
 ---
 
 ## 1. Entendimiento del problema
@@ -79,7 +76,7 @@ que el gerente, que no es técnico, vea la operación en tiempo real.
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Bus de eventos       | **SNS → SQS** (fan-out), una cola por servicio con DLQ                                                                                           | Publicar una vez y que cada consumidor tenga su cola; agregar consumidores no modifica al productor (ver §3.2)                                                                                                         |
 | Base de datos        | DynamoDB on-demand, **una tabla por servicio**                                                                                                  | Escala sola, sin servidores ni capacidad que administrar; cada servicio es dueño de sus datos                                                                                                                           |
-| IaC / despliegue     | Serverless Framework **v4**: un `serverless.yml` por servicio más el stack compartido `infra/aws`; `npm run deploy:aws` los despliega en orden | Mencionado en el reto. Sin Serverless Compose: guarda su estado a través de `us-east-1`, región bloqueada en la cuenta, y los servicios ya leen las salidas compartidas de CloudFormation (`${cf:...}`)             |
+| IaC / despliegue     | Serverless Framework **v4**: un `serverless.yml` por servicio más el stack compartido `infra/aws`; `npm run deploy:aws` los despliega en orden | Mencionado en el reto. No se usa Serverless Compose (la herramienta para desplegar varios servicios juntos): no funciona con las restricciones de región de la cuenta ([DEVLOG](DEVLOG.md)), y no hace falta, porque cada servicio lee de CloudFormation lo que necesita del stack compartido |
 | Emulación local      | LocalStack **4.14.0** (SQS, SNS, DynamoDB), versión fijada                                                                                       | Mismos adaptadores en local y en la nube. Las versiones posteriores exigen cuenta y *auth token*; la 4.14.0 es la última que arranca sin token, así que los reviewers corren `docker compose up` sin registrarse (§9) |
 | Tiempo real          | API Gateway WebSocket                                                                                                                            | El servidor empuja cada cambio al instante                                                                                                                                                                              |
 | Dashboard en AWS     | S3 privado + CloudFront                                                                                                                          | HTTPS y la capa siempre gratis de CloudFront                                                                                                                                                                            |
@@ -91,7 +88,7 @@ Que los créditos duren y que un abuso no pueda agotarlos (eso pausaría la cuen
 
 - sin VPC ni NAT Gateway; DynamoDB on-demand sin PITR ni streams; sin X-Ray;
 - logs con retención de 7 días;
-- *reserved concurrency* de 10 por Lambda (gratis, a diferencia de la *provisioned*) y hasta 10 Lambdas por cola;
+- *reserved concurrency* de 10 por Lambda (gratis, a diferencia de la *provisioned*) y hasta 10 Lambdas por cola; 20 para la cola de warehouse, por donde pasan todos los platos y las compras;
 - *throttling* en el HTTP API (50 peticiones/s, picos de 100) y CORS solo para el dominio del dashboard;
 - secretos en SSM estándar;
 - alerta de AWS Budgets si el mes se proyecta sobre US$10, **sin descontar los créditos** (si los incluyera, la factura neta sería US$0 y nunca avisaría).

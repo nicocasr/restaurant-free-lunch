@@ -134,6 +134,7 @@ la regla de versiones quedó explícita: agregar un campo opcional no cambia la 
 | Avisos del SDK en cada prueba de integración de SQS                                        | LocalStack responde las URLs de las colas con su propio dominio                                     | Las pruebas usan siempre el endpoint configurado                        |
 | El aviso "50 dishes sent to the kitchen" seguía tras "New workday"                         | El formulario conservaba su estado entre jornadas                                                   | El formulario se reinicia con cada jornada                              |
 | El inventario mostraba "+1 on its way" con todos los platos entregados; el backend tenía 0 | La compra llega al dashboard y a warehouse a la vez: la relectura del inventario podía adelantarse | Una lectura más 1 s después del último cambio                           |
+| Al repetir la carga con la cuota ampliada, 40 platos quedaron **46 s detenidos**, sin errores y sin ninguna Lambda ejecutándose | Warehouse llegó a su tope de 10 Lambdas y su cola entregó 19 mensajes habiendo recibido solo 3: lo más probable es que AWS tomara mensajes que no alcanzó a pasarle a la Lambda, y quedaron ocultos los 60 s de visibilidad de la cola | Visibilidad de 60 a 20 s en las colas estándar, y **20 Lambdas** para la cola de warehouse, por donde pasan todos los platos y las compras (v2.1) |
 
 **Resultados en AWS:**
 
@@ -176,3 +177,4 @@ la regla de versiones quedó explícita: agregar un campo opcional no cambia la 
 | 1.22    | 19/10/2026 | CORS solo para el dominio del dashboard; un script despliega los stacks en orden en lugar de Serverless Compose                                               |
 | 1.23    | 19/10/2026 | AWS amplió la cuota de Lambda a 1000; cada función reserva 10 ejecuciones y cada cola dispara hasta 10                                                         |
 | 2.0     | 19/10/2026 | El plan se divide en tres documentos: PLANNING (qué y por qué), ARCHITECTURE (cómo) y este DEVLOG (el camino)                                                 |
+| 2.1     | 19/10/2026 | La cola de warehouse reserva 20 Lambdas; las colas estándar devuelven en 20 s los mensajes que no alcanzaron a entregarse                                      |

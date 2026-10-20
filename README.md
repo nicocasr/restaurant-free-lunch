@@ -114,8 +114,9 @@ is `us-east-2`. On PowerShell, set the variable first with `$env:BUDGET_EMAIL = 
 The deployment runs on the AWS free plan and is designed so that it cannot cost money:
 
 - No VPC or NAT gateway; DynamoDB on demand; logs kept 7 days; no X-Ray.
-- Each Lambda reserves at most 10 concurrent executions, and the HTTP API throttles requests
-  above 50 per second, so an abuse cannot burn the credits.
+- Each Lambda can run at most 10 copies at the same time (20 for the warehouse queue, which
+  every dish goes through), and the HTTP API rejects requests above 50 per second, so an abuse
+  cannot burn the credits.
 - An AWS Budgets alert emails when the month is projected above US$10, counting usage before
   credits.
 - CloudFront, Lambda, SQS and SNS stay within their always-free tiers at this scale.
