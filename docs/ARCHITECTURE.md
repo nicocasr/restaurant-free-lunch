@@ -17,6 +17,7 @@ table of another. When it needs that data, it gets it from events or from the ow
 | **warehouse** | Atomic reservations, waiting list, demand per ingredient       | inventory, reservations, waiting orders, demand, shortages   |
 | **market**    | Buys at the farmers market with retries                        | purchases and the progress of each shortage                  |
 | **realtime**  | Pushes events to the dashboards                                | open connections                                             |
+| **assistant** | Answers the manager's questions in plain words (AI)            | how many questions were asked this minute and this day       |
 | **web**       | React dashboard                                                | none (static files)                                          |
 
 Each service follows a hexagonal layout:
@@ -25,7 +26,7 @@ Each service follows a hexagonal layout:
 services/<service>/src/
 ├── domain/          pure rules, no I/O
 ├── application/     use cases and the ports they need
-├── infrastructure/  adapters: DynamoDB, SNS, SQS, the farmers market
+├── infrastructure/  adapters: DynamoDB, SNS, SQS, the farmers market, Gemini
 └── entrypoints/
     ├── wiring.ts    connects the real adapters to the use cases, for both runtimes
     ├── container/   node:http server + SQS poller (docker compose)
@@ -238,6 +239,24 @@ guarantee order. So the warehouse only serves orders of a workday it has already
 earlier one fails and is retried, and a late purchase of a previous workday never enters the new
 stock.
 
+## The assistant
+
+The assistant answers questions about the workday with Gemini. Its full design, rules and
+guardrails are in [AI.md](AI.md); here is how it fits in the system.
+
+- **It reads, it does not listen.** Unlike the other services, it consumes no events and keeps
+  no copy of the data. When a question arrives, it reads the current state from the query APIs
+  of orders, warehouse, market and kitchen, the same ones the dashboard uses. A copy kept from
+  events could lag behind; reading on demand always answers with what the dashboard shows.
+- **One call to the model per question.** It summarizes the workday in a few hundred tokens and
+  sends it with the question: counts instead of every order, so the call stays small whether 10
+  or 10,000 dishes were ordered.
+- **Its only table counts questions.** A limit per minute and per day protects the free quota of
+  Gemini. Like the reservations, the count lives in DynamoDB, so every Lambda sees the same
+  number.
+- **It cannot break the operation.** It only makes GET requests, and if Gemini fails, only the
+  assistant panel shows a message: ordering and cooking go on.
+
 ## Two runtimes
 
 |                 | docker compose                         | AWS                                      |
@@ -247,16 +266,20 @@ stock.
 | Dashboard push  | WebSocket with `ws`, batched ~500 ms   | API Gateway WebSocket API                |
 | AWS services    | LocalStack 4.14.0                      | DynamoDB, SNS, SQS                       |
 | Dashboard       | nginx container                        | S3 + CloudFront                          |
+| Gemini API key  | `.env` file, ignored by Git             | SSM Parameter Store (SecureString)       |
 
 ```mermaid
 flowchart LR
     browser([Browser]) --> cf[CloudFront] --> s3[(S3)]
     browser -- HTTPS --> api[HTTP API<br/>throttled] --> lambdas[orders · kitchen<br/>warehouse · market]
+    api --> assistant[assistant] -- reads --> api
+    assistant --> gemini[(Gemini)]
     browser -- WSS --> ws[WebSocket API] --> rt[realtime]
     lambdas -- publish --> sns[SNS topics] --> sqs[SQS queues] --> lambdas
     sqs --> rt
     lambdas --> ddb[(DynamoDB)]
     rt --> ddb
+    assistant --> ddb
 ```
 
 Limits that keep the AWS deployment free:
