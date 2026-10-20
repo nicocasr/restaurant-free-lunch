@@ -65,10 +65,9 @@ the rules works in both places at once.
 
 ## Run it locally
 
-Requirements: Node.js 24 and Docker.
+Requirements: Docker. Each image installs its own dependencies.
 
 ```bash
-npm ci
 docker compose up --build
 ```
 
@@ -77,7 +76,10 @@ needed; the purchases go to the real farmers market.
 
 ## Tests
 
+Requirements: Node.js 24. Install the exact dependency versions of `package-lock.json` once:
+
 ```bash
+npm ci
 npm test                  # unit tests (domain and use cases, 90% coverage minimum)
 npm run test:integration  # adapters against LocalStack: needs `docker compose up`
 npm run e2e               # orders 5 dishes and waits until all are delivered
