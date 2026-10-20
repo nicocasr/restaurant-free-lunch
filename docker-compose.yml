@@ -99,6 +99,23 @@ services:
       DLQ_URL: http://localstack:4566/000000000000/realtime-dlq
       PORT: '3004'
 
+  assistant:
+    <<: *service
+    build: { context: ., dockerfile: services/assistant/Dockerfile }
+    ports:
+      - '3005:3005'
+    environment:
+      <<: *aws
+      TABLE_NAME: assistant
+      PORT: '3005'
+      ORDERS_URL: http://orders:3000
+      WAREHOUSE_URL: http://warehouse:3001
+      MARKET_URL: http://market:3003
+      KITCHEN_URL: http://kitchen:3002
+      # Read from the .env file at the root, which Git ignores. Without it the assistant
+      # answers that it is not configured, and everything else works the same.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+
   # The dashboard: open http://localhost:8080
   web:
     build: { context: ., dockerfile: apps/web/Dockerfile }
@@ -107,6 +124,7 @@ services:
     depends_on:
       - orders
       - realtime
+      - assistant
 
 volumes:
   localstack-data:
